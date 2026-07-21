@@ -1,2 +1,18 @@
+# Secrets & environment
 /venv
 .env
+
+# Databases
+*.sqlite3
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Django
+/media
+/staticfiles
+
+# OS junk
+desktop.ini
+Thumbs.db
