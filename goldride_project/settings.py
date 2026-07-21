@@ -39,6 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'goldride_app',
+    'cars',
+    'rest_framework',
 ]
 
 MIDDLEWARE = [
