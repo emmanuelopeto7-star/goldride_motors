@@ -17,3 +17,4 @@ class Car(models.Model):
 
     def __str__(self):
         return f"{self.make} {self.model} ({self.year}) - {self.state} - ${self.price} - {self.description}"
+    image=models.ImageField(upload_to='cars/', blank=True)    
