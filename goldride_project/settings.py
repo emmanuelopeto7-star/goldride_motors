@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'goldride_app',
     'cars',
     'rest_framework',
+    'inquiries',
 ]
 
 MIDDLEWARE = [
