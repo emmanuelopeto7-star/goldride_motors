@@ -106,6 +106,11 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "inquiries": "5/hour",
+    },
+}
 
 
 # Internationalization
