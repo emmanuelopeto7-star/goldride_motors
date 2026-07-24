@@ -21,3 +21,10 @@ class Car(models.Model):
     def __str__(self):
         return f"{self.make} {self.model} ({self.year}) - {self.condition} - ${self.price} - {self.description}"
     image=models.ImageField(upload_to='cars/', blank=True)    
+
+class CarImage(models.Model):
+    car=models.ForeignKey(Car, on_delete=models.CASCADE, related_name='images')
+    image=models.ImageField(upload_to='cars/gallery/')   
+
+    def __str__(self):
+        return f"Image for {self.car}"
