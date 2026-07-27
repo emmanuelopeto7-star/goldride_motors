@@ -7,6 +7,7 @@ class carListVeiw(generics.ListAPIView):
     queryset = Car.objects.all()
     serializer_class = CarSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['make', 'model', 'description']
     filterset_fields = ['make', 'model', 'year', 'condition', 'availability']
     ordering_fields = ['price', 'year']
 class carDetailView(generics.RetrieveAPIView):
