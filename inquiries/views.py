@@ -1,4 +1,4 @@
-from rest_framework import generics
+from rest_framework import generics, permissions
 from .models import Inquiry
 from .serializers import InquirySerializer
 from rest_framework.throttling import ScopedRateThrottle
@@ -19,3 +19,7 @@ class InquiryCreateView(generics.CreateAPIView):
             recipient_list=["sales@goldridemotors.co.ke"],
             fail_silently=True,
         )
+class InquiryListView(generics.ListAPIView):
+    queryset = Inquiry.objects.all().order_by("-created_at")
+    serializer_class = InquirySerializer
+    permission_classes = [permissions.IsAdminUser]
