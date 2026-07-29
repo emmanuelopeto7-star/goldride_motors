@@ -1,3 +1,28 @@
 from django.db import models
 import uuid
+from imports.models import ImportOrder
 
+class Payment(models.Model):
+    METHOD_CHOICES = [
+        ("mpesa", "M-Pesa"),
+        ("card", "Card"),
+        ("manual", "Manual / Bank"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("paid", "Paid"),
+        ("failed", "Failed"),
+    ]
+
+    reference = models.ForeignKey(ImportOrder, on_delete=models.CASCADE, related_name='payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    method = models.CharField(max_length=10, choices=METHOD_CHOICES)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    provider_ref = models.CharField(max_length=100, blank=True)
+    note = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+def __str__(self):
+        return f"{self.amount} KES - {self.get_status_display()} - {self.order}"
