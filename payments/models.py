@@ -15,7 +15,8 @@ class Payment(models.Model):
         ("failed", "Failed"),
     ]
 
-    reference = models.ForeignKey(ImportOrder, on_delete=models.CASCADE, related_name='payments')
+    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    order = models.ForeignKey(ImportOrder, on_delete=models.PROTECT, related_name='payments')
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     method = models.CharField(max_length=10, choices=METHOD_CHOICES)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
@@ -24,5 +25,5 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-def __str__(self):
+    def __str__(self):
         return f"{self.amount} KES - {self.get_status_display()} - {self.order}"

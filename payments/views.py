@@ -1,12 +1,11 @@
-from django.shortcuts import render
-from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Payment
 from .services import start_paystack_payment
 
-class initiatePaymentView(APIView):
+
+class InitiatePaymentView(APIView):
     def post(self, request):
         reference=request.data.get("reference")
         email=request.data.get("email")
