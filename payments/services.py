@@ -1,13 +1,15 @@
 import requests
 from django.conf import settings
 from decouple import config
+import hmac
+import hashlib
 
-PAYSTACK_URL = config('PAYSTACK_URL')
+PAYSTACK_BASE_URL = config('PAYSTACK_BASE_URL')
 
 
 def start_paystack_payment(payment, email):
     resp = requests.post(
-        PAYSTACK_URL,
+        f"{PAYSTACK_BASE_URL}/transaction/initialize",
         headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
         json={
             "email": email,
@@ -27,3 +29,33 @@ def start_paystack_payment(payment, email):
         return None
 
     return data.get("data", {}).get("authorization_url")
+
+def verify_paystack_signature(raw_body, signature):
+    if not signature:
+        return False
+    expected = hmac.new(
+        settings.PAYSTACK_SECRET_KEY.encode(),   
+        raw_body,                                
+        hashlib.sha512,                          
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+def verify_paystack_payment(reference):
+    resp = requests.get(
+        f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
+        headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
+        timeout=120,
+    )
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+
+    if not data.get("status"):
+        return None
+
+    return data.get("data")
+
+
+
