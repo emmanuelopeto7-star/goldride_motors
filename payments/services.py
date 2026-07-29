@@ -15,7 +15,7 @@ def start_paystack_payment(payment, email):
             "currency": "KES",
             "reference": str(payment.reference),
         },
-        timeout=15,
+        timeout=120,
     )
 
     try:
