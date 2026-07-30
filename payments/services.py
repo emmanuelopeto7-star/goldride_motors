@@ -3,11 +3,14 @@ from django.conf import settings
 from decouple import config
 import hmac
 import hashlib
+import uuid
 
 PAYSTACK_BASE_URL = config('PAYSTACK_BASE_URL')
 
 
 def start_paystack_payment(payment, email):
+    paystack_ref = str(uuid.uuid4())
+
     resp = requests.post(
         f"{PAYSTACK_BASE_URL}/transaction/initialize",
         headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
@@ -15,7 +18,7 @@ def start_paystack_payment(payment, email):
             "email": email,
             "amount": int(payment.amount * 100),
             "currency": "KES",
-            "reference": str(payment.reference),
+            "reference": paystack_ref,
         },
         timeout=120,
     )
@@ -28,7 +31,13 @@ def start_paystack_payment(payment, email):
     if not data.get("status"):
         return None
 
+    payment.paystack_ref = paystack_ref
+    payment.save()
+
     return data.get("data", {}).get("authorization_url")
+    
+
+   
 
 def verify_paystack_signature(raw_body, signature):
     if not signature:

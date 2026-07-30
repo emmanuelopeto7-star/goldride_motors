@@ -69,4 +69,4 @@ class Command(BaseCommand):
         if changed:
             self.stdout.write(self.style.SUCCESS(f"{line}  -> {payment.status}"))
         else:
-            self.stdout.write(f"{line}  -> unchanged")
+            self.stdout.write(f"{line}  -> unchanged")        
