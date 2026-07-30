@@ -21,7 +21,10 @@ class Command(BaseCommand):
                 self.report(payment, "manual - staff decides", changed=False)
 
     def check_card(self, payment):
-        data = verify_paystack_payment(str(payment.reference))
+        if not payment.paystack_ref:
+            return self.report(payment, "never initiated", changed=False)
+
+        data = verify_paystack_payment(payment.paystack_ref)
         if data is None:
             return self.report(payment, "no transaction at Paystack", changed=False)
 

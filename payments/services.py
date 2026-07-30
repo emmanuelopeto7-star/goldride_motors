@@ -35,19 +35,20 @@ def start_paystack_payment(payment, email):
     payment.save()
 
     return data.get("data", {}).get("authorization_url")
-    
 
-   
 
 def verify_paystack_signature(raw_body, signature):
     if not signature:
         return False
+
     expected = hmac.new(
-        settings.PAYSTACK_SECRET_KEY.encode(),   
-        raw_body,                                
-        hashlib.sha512,                          
+        settings.PAYSTACK_SECRET_KEY.encode(),
+        raw_body,
+        hashlib.sha512,
     ).hexdigest()
+
     return hmac.compare_digest(expected, signature)
+
 
 def verify_paystack_payment(reference):
     resp = requests.get(
@@ -65,6 +66,3 @@ def verify_paystack_payment(reference):
         return None
 
     return data.get("data")
-
-
-

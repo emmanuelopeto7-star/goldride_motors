@@ -95,6 +95,7 @@ def query_mpesa_payment(checkout_request_id):
         },
         timeout=30,
     )
+
     try:
         return resp.json()
     except ValueError:

@@ -31,11 +31,13 @@ class InitiatePaymentView(APIView):
             return Response({"error": "could not start payment"}, status=502)
         return Response({"checkout_url": url})
 
+
 class PaystackWebhookView(APIView):
     def post(self, request):
         signature = request.headers.get("x-paystack-signature")
         if not verify_paystack_signature(request.body, signature):
             return Response({"error": "invalid signature"}, status=400)
+
         event = request.data.get("event")
         reference = request.data.get("data", {}).get("reference")
 
@@ -53,7 +55,7 @@ class PaystackWebhookView(APIView):
             return Response({"status": "not successful"})
 
         try:
-            payment = Payment.objects.get(reference=reference, status="pending")
+            payment = Payment.objects.get(paystack_ref=reference, status="pending")
         except (Payment.DoesNotExist, ValidationError):
             return Response({"status": "no pending payment"})
 
@@ -75,21 +77,22 @@ class MpesaCallbackView(APIView):
 
         if not checkout_id:
             return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
-        
+
         try:
             payment = Payment.objects.get(
                 checkout_request_id=checkout_id, status="pending"
             )
         except Payment.DoesNotExist:
             return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
         result = query_mpesa_payment(checkout_id)
         if result is None or str(result.get("ResultCode")) != "0":
             return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
         receipt = ""
         for item in stk.get("CallbackMetadata", {}).get("Item", []):
             if item.get("Name") == "MpesaReceiptNumber":
                 receipt = item.get("Value", "")
-
 
         payment.status = "paid"
         payment.provider_ref = str(receipt)
