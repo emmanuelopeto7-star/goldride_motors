@@ -18,6 +18,20 @@ class ImportOrder(models.Model):
     current_stage = models.CharField(max_length=10, choices=STAGE_CHOICES, default="ordered")
     created_at = models.DateTimeField(auto_now_add=True)
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    @property
+    def amount_paid(self):
+        total = self.payments.filter(status="paid").aggregate(Sum("amount"))["amount__sum"]
+        return total or Decimal("0.00")
+
+    @property
+    def balance(self):
+        return self.total_amount - self.amount_paid
+
+    @property
+    def is_settled(self):
+        return self.total_amount > 0 and self.balance <= 0
 
     def __str__(self):
         return f"{self.car_description} for {self.customer_name}"
