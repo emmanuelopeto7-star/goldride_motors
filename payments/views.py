@@ -1,4 +1,5 @@
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from django.core.exceptions import ValidationError
@@ -13,6 +14,9 @@ from .services import (
 
 
 class InitiatePaymentView(APIView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "payments"
+
     def post(self, request):
         reference=request.data.get("reference")
         email=request.data.get("email")
