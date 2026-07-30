@@ -90,6 +90,7 @@ class MpesaCallbackView(APIView):
             if item.get("Name") == "MpesaReceiptNumber":
                 receipt = item.get("Value", "")
 
+
         payment.status = "paid"
         payment.provider_ref = str(receipt)
         payment.save()

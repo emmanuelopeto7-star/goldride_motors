@@ -22,6 +22,7 @@ class Payment(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
     provider_ref = models.CharField(max_length=100, blank=True)
     checkout_request_id = models.CharField(max_length=100, blank=True)
+    paystack_ref = models.CharField(max_length=100, blank=True)
     note = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
