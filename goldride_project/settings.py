@@ -117,6 +117,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "inquiries": "5/hour",
         "tracking": "20/hour",
+        "payments": "10/hour",
     },
         "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
