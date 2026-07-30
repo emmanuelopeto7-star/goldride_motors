@@ -1,5 +1,8 @@
 from django.db import models
 import uuid
+from decimal import Decimal
+
+from django.db.models import Sum
 
 class ImportOrder(models.Model):
     STAGE_CHOICES = [
