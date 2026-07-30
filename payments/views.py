@@ -4,10 +4,11 @@ from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
 
 from .models import Payment
+from .mpesa import query_mpesa_payment
 from .services import (
     start_paystack_payment,
-    verify_paystack_signature,
     verify_paystack_payment,
+    verify_paystack_signature,
 )
 
 
@@ -62,3 +63,30 @@ class PaystackWebhookView(APIView):
         payment.save()
         return Response({"status": "ok"})
 
+
+class MpesaCallbackView(APIView):
+    def post(self, request):
+        stk = request.data.get("Body", {}).get("stkCallback", {})
+        checkout_id = stk.get("CheckoutRequestID")
+
+        if not checkout_id:
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+        
+        try:
+            payment = Payment.objects.get(
+                checkout_request_id=checkout_id, status="pending"
+            )
+        except Payment.DoesNotExist:
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+        result = query_mpesa_payment(checkout_id)
+        if result is None or str(result.get("ResultCode")) != "0":
+            return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+        receipt = ""
+        for item in stk.get("CallbackMetadata", {}).get("Item", []):
+            if item.get("Name") == "MpesaReceiptNumber":
+                receipt = item.get("Value", "")
+
+        payment.status = "paid"
+        payment.provider_ref = str(receipt)
+        payment.save()
+        return Response({"ResultCode": 0, "ResultDesc": "Accepted"})

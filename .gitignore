@@ -1,6 +1,7 @@
 # Secrets & environment
 /venv
 .env
+.env.*
 
 # Databases
 *.sqlite3
@@ -20,3 +21,4 @@ Thumbs.db
 # Dev scratch tools
 webhook_test.py
 demo.py
+tunnel.log
