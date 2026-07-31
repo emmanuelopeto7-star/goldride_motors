@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from decouple import config
+import os
+import  dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -85,14 +87,11 @@ WSGI_APPLICATION = 'goldride_project.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-         'ENGINE': config('DATABASE_ENGINE'),
-        'NAME': config('DATABASE_NAME'),
-        "USER" : config('DATABASE_USER'),
-        "PASSWORD": config('DATABASE_PASSWORD'),
-        "HOST" : config('DATABASE_HOST'),
-        "PORT" : config('DATABASE_PORT')
-    }
+    'default': dj_database_url.config(
+        # Fallback to local SQLite if DATABASE_URL environment variable is missing
+        default=f"sqlite:///{os.path.join(BASE_DIR, 'db.sqlite3')}",
+        conn_max_age=600
+    )
 }
 
 
