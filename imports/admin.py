@@ -18,6 +18,7 @@ class PaymentInline(admin.TabularInline):
 class ImportOrderAdmin(admin.ModelAdmin):
     list_display = [
         "customer_name",
+        "customer",
         "car_description",
         "current_stage",
         "total_amount",
@@ -26,7 +27,7 @@ class ImportOrderAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["current_stage"]
-    search_fields = ["customer_name", "phone", "car_description"]
+    search_fields = ["customer_name", "phone", "car_description", "customer__username"]
     readonly_fields = ["token", "created_at", "amount_paid", "balance", "is_settled"]
     inlines = [MilestoneInline, PaymentInline]
 
