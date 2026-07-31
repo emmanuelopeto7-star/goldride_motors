@@ -19,11 +19,16 @@ MANAGER = SALES + [
     "add_payment", "change_payment",
 ]
 
+CUSTOMER = []
+
+ROLES = [("Sales", SALES), ("Manager", MANAGER), ("Customer", CUSTOMER)]
+
+
 class Command(BaseCommand):
-    help = "Create the Sales and Manager groups with their permissions"
+    help = "Create the Sales, Manager and Customer groups with their permissions"
 
     def handle(self, *args, **options):
-        for name, codenames in [("Sales", SALES), ("Manager", MANAGER)]:
+        for name, codenames in ROLES:
             group, created = Group.objects.get_or_create(name=name)
 
             perms = Permission.objects.filter(

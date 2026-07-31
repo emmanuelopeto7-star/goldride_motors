@@ -2,6 +2,7 @@ from django.db import models
 import uuid
 from decimal import Decimal
 
+from django.conf import settings
 from django.db.models import Sum
 
 class ImportOrder(models.Model):
@@ -12,6 +13,13 @@ class ImportOrder(models.Model):
         ("clearing", "Customs Clearing"),
         ("delivered", "Delivered"),
     ]
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="orders",
+    )
     customer_name = models.CharField(max_length=100)
     phone = models.CharField(max_length=20)
     car_description = models.CharField(max_length=200)
