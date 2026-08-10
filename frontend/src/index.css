@@ -10,4 +10,17 @@
   --color-ink: #1A1A1A;
   --color-ink-soft: #6B6B6B;
   --color-ink-mute: #9A9A9A;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Playfair Display", Georgia, serif;
+
+  --text-h1: 44px;
+  --text-h1--line-height: 1.1;
+  --text-section: 32px;
+  --text-section--line-height: 1.2;
+  --text-price: 20px;
+  --text-model: 15px;
+  --text-meta: 13px;
+  --text-badge: 11px;
+  --text-badge--letter-spacing: 0.08em;
 }
