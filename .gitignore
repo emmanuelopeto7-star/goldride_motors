@@ -1,5 +1,5 @@
 # Secrets & environment
-/venv
+venv/
 .env
 .env.*
 
@@ -11,12 +11,20 @@ __pycache__/
 *.pyc
 
 # Django
-/media
-/staticfiles
+media/
+staticfiles/
+
+# Node
+node_modules/
+dist/
 
 # OS junk
 desktop.ini
 Thumbs.db
+
+# Server logs
+server.log
+server.out
 
 # Dev scratch tools
 webhook_test.py
@@ -25,3 +33,4 @@ tunnel.log
 mpesa_test.py
 mpesa_demo.py
 mpesademo.py
+auth_test.py
