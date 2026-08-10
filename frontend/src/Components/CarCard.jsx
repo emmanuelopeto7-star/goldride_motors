@@ -1,9 +1,11 @@
 import {formatPrice} from '../lib/format.js'
+import { Link } from 'react-router-dom'
 
 function CarCard({ car }) {
     const photoCount = car.images.length + (car.image ? 1 : 0)
 
     return(
+        <Link to={`/cars/${car.id}`} className="block">
         <article className="group border border-line bg-surface transition-colors hover:border-line-hover">
       <div className="relative aspect-[4/3] overflow-hidden bg-page">
         {car.image && (
@@ -30,6 +32,7 @@ function CarCard({ car }) {
         </p>
       </div>
     </article>
+    </Link>
   )
 }
 
