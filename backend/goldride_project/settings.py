@@ -140,6 +140,7 @@ REST_FRAMEWORK = {
         "purchases": "5/hour",
         "register": "10/hour",
         "social": "30/hour",
+        "login": "10/hour",
     },
         "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,

@@ -162,8 +162,11 @@ def get_or_create_social_user(provider, profile):
         user.groups.add(group)
         created = True
 
-    # The claimed address is still worth keeping against the link itself.
-    SocialAccount.objects.create(
-        provider=provider, uid=uid, email=claimed_email, user=user
+    # get_or_create, not create: two first-time logins for the same account
+    # can both miss the lookup above and race to insert.
+    SocialAccount.objects.get_or_create(
+        provider=provider,
+        uid=uid,
+        defaults={"email": claimed_email, "user": user},
     )
     return user, created

@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.contrib.auth.models import Group
 from django.test import override_settings
 from rest_framework.test import APITestCase
@@ -32,7 +33,10 @@ def profile(uid, email="", verified=False, first="", last=""):
     }
 )
 class SocialLoginTests(APITestCase):
-    """Throttling is off here so the rules themselves are what's under test."""
+    """DRF binds throttle rates at import, so the bucket is cleared instead."""
+
+    def setUp(self):
+        cache.clear()
 
     def test_unknown_provider_is_rejected(self):
         response = self.client.post(
@@ -185,6 +189,174 @@ class SocialLoginTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["roles"], ["Customer"])
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.TokenAuthentication",
+        ],
+    }
+)
+class EmailLoginTests(APITestCase):
+    URL = "/api/auth/login/email/"
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            "mwangi", email="Mwangi@Example.com", password="Sh1llings!2026"
+        )
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(self.user)
+
+    def test_correct_credentials_return_a_working_token(self):
+        response = self.client.post(
+            self.URL,
+            {"email": "mwangi@example.com", "password": "Sh1llings!2026"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["token"]
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        me = self.client.get("/api/me/").json()
+        self.assertEqual(me["username"], "mwangi")
+        self.assertEqual(me["roles"], ["Customer"])
+
+    def test_email_match_is_case_insensitive(self):
+        response = self.client.post(
+            self.URL,
+            {"email": "MWANGI@EXAMPLE.COM", "password": "Sh1llings!2026"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_wrong_password_is_rejected(self):
+        response = self.client.post(
+            self.URL, {"email": "mwangi@example.com", "password": "wrong"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_unknown_email_gives_the_same_message_as_a_wrong_password(self):
+        """Otherwise the endpoint tells strangers which emails are registered."""
+        unknown = self.client.post(
+            self.URL, {"email": "nobody@example.com", "password": "x"}, format="json"
+        )
+        wrong = self.client.post(
+            self.URL, {"email": "mwangi@example.com", "password": "wrong"}, format="json"
+        )
+
+        self.assertEqual(unknown.status_code, wrong.status_code)
+        self.assertEqual(unknown.json(), wrong.json())
+
+    def test_social_only_account_cannot_be_password_guessed(self):
+        social = User.objects.create_user("amina", email="amina@example.com")
+        social.set_unusable_password()
+        social.save()
+
+        for attempt in ["", "password", "Sh1llings!2026"]:
+            response = self.client.post(
+                self.URL,
+                {"email": "amina@example.com", "password": attempt},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400)
+
+    def test_blank_email_cannot_match_a_social_user(self):
+        """Social users carry email='' - an empty request must not find them."""
+        ghost = User.objects.create_user("user1a2b", email="")
+        ghost.set_unusable_password()
+        ghost.save()
+
+        for body in [{}, {"email": "", "password": "x"}, {"password": "x"}]:
+            response = self.client.post(self.URL, body, format="json")
+            self.assertEqual(response.status_code, 400)
+            self.assertNotIn("token", response.json())
+
+    def test_disabled_account_is_refused(self):
+        self.user.is_active = False
+        self.user.save()
+
+        response = self.client.post(
+            self.URL,
+            {"email": "mwangi@example.com", "password": "Sh1llings!2026"},
+            format="json",
+        )
+
+        # authenticate() rejects inactive users, so this is indistinguishable
+        # from a wrong password - which leaks less than a dedicated 403.
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("token", response.json())
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.TokenAuthentication",
+        ],
+    }
+)
+class MeTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+    def sign_in(self, user):
+        from rest_framework.authtoken.models import Token
+
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_social_user_without_an_email_is_flagged(self):
+        user = User.objects.create_user("user1a2b", email="")
+        self.sign_in(user)
+
+        body = self.client.get("/api/me/").json()
+
+        self.assertTrue(body["needs_email"])
+        self.assertEqual(body["email"], "")
+
+    def test_they_can_add_one(self):
+        user = User.objects.create_user("user1a2b", email="")
+        self.sign_in(user)
+
+        response = self.client.patch(
+            "/api/me/", {"email": "amina@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["needs_email"])
+        user.refresh_from_db()
+        self.assertEqual(user.email, "amina@example.com")
+
+    def test_they_cannot_take_an_email_already_in_use(self):
+        User.objects.create_user("owner", email="taken@example.com")
+        user = User.objects.create_user("user1a2b", email="")
+        self.sign_in(user)
+
+        response = self.client.patch(
+            "/api/me/", {"email": "taken@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "")
+
+    def test_me_reports_which_providers_are_linked(self):
+        user = User.objects.create_user("amina", email="amina@example.com")
+        SocialAccount.objects.create(provider="google", uid="g-1", user=user)
+        self.sign_in(user)
+
+        body = self.client.get("/api/me/").json()
+
+        self.assertEqual(body["providers"], ["google"])
+        self.assertFalse(body["has_password"])
+
+    def test_anonymous_cannot_read_or_change_it(self):
+        self.assertEqual(self.client.get("/api/me/").status_code, 401)
+        self.assertEqual(
+            self.client.patch("/api/me/", {"email": "x@example.com"}, format="json").status_code,
+            401,
+        )
 
 
 class SocialAccountModelTests(APITestCase):
