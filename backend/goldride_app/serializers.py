@@ -6,6 +6,17 @@ from rest_framework import serializers
 User = get_user_model()
 
 
+class SocialLoginSerializer(serializers.Serializer):
+    credential = serializers.CharField(
+        required=False, allow_blank=True,
+        help_text="Google: the ID token from Google Identity Services.",
+    )
+    code = serializers.CharField(
+        required=False, allow_blank=True,
+        help_text="LinkedIn: the authorisation code from the redirect.",
+    )
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
 

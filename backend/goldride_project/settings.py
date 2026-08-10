@@ -26,6 +26,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY')
 
+# Social sign-in. Blank means that provider is simply switched off.
+GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', default='')
+LINKEDIN_CLIENT_ID = config('LINKEDIN_CLIENT_ID', default='')
+LINKEDIN_CLIENT_SECRET = config('LINKEDIN_CLIENT_SECRET', default='')
+LINKEDIN_REDIRECT_URI = config('LINKEDIN_REDIRECT_URI', default='')
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG')
 
@@ -133,6 +139,7 @@ REST_FRAMEWORK = {
         "payments": "10/hour",
         "purchases": "5/hour",
         "register": "10/hour",
+        "social": "30/hour",
     },
         "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
