@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
 /** size="dialog" is the 440px card used for auth and forms.
- *  size="full" is an edge-to-edge dark surface for viewing images. */
+ *  size="full" is an edge-to-edge dark surface for viewing images.
+ *  size="drawer" is a full-height panel against the left edge, for navigation. */
 function Modal({ onClose, children, size = 'dialog' }) {
   useEffect(() => {
     function handleKey(event) {
@@ -21,18 +22,21 @@ function Modal({ onClose, children, size = 'dialog' }) {
   }, [onClose])
 
   const full = size === 'full'
+  const drawer = size === 'drawer'
 
   // Rendered into document.body, not where it is written. A modal inside a
   // sticky or transformed ancestor is trapped in that stacking context, and
   // no z-index can lift it above the header from in there.
   return createPortal(
     <div
-      className={`fixed inset-0 z-[100] flex justify-center ${
+      className={`fixed inset-0 z-[100] flex ${
         full
-          ? 'items-center bg-ink/95'
-          : // Scroll the scrim, not the dialog, so a tall form is reachable on
-            // a short screen instead of being clipped at both ends.
-            'items-start overflow-y-auto bg-ink/50 px-5 py-10'
+          ? 'items-center justify-center bg-ink/95'
+          : drawer
+            ? 'items-stretch justify-start bg-ink/50'
+            : // Scroll the scrim, not the dialog, so a tall form is reachable
+              // on a short screen instead of being clipped at both ends.
+              'items-start justify-center overflow-y-auto bg-ink/50 px-5 py-10'
       }`}
       onClick={onClose}
     >
@@ -42,7 +46,9 @@ function Modal({ onClose, children, size = 'dialog' }) {
         className={
           full
             ? 'relative h-full w-full'
-            : 'relative my-auto w-full max-w-[440px] border border-line bg-page p-8 lg:p-12'
+            : drawer
+              ? 'relative h-full w-full max-w-[360px] overflow-y-auto border-r border-line bg-page p-8'
+              : 'relative my-auto w-full max-w-[440px] border border-line bg-page p-8 lg:p-12'
         }
         // Stops a click inside the panel bubbling up to the scrim's close.
         onClick={(event) => event.stopPropagation()}

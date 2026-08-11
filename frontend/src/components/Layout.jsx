@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 import BrandStrip from './BrandStrip'
 import Footer from './Footer'
+import MobileMenu from './MobileMenu'
 
 const pillBase =
   'flex h-10 shrink-0 items-center rounded-full border px-5 text-meta transition-colors duration-200'
@@ -22,6 +23,7 @@ function Layout() {
   const [searchParams] = useSearchParams()
   const [term, setTerm] = useState(searchParams.get('search') ?? '')
   const [authOpen, setAuthOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const { user, signOut } = useAuth()
 
   const scrolled = useScrolled(80)
@@ -46,7 +48,13 @@ function Layout() {
         }`}
       >
         <div className="mx-auto flex h-[72px] max-w-[1440px] items-center gap-6 px-5 lg:px-12">
-          <button type="button" aria-label="Open menu" className="shrink-0">
+          <button
+            type="button"
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+            className="shrink-0"
+          >
             <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="1.5" />
             </svg>
@@ -108,6 +116,13 @@ function Layout() {
       </main>
 
       <Footer />
+
+      {menuOpen && (
+        <MobileMenu
+          onClose={() => setMenuOpen(false)}
+          onSignIn={() => setAuthOpen(true)}
+        />
+      )}
 
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
     </div>
