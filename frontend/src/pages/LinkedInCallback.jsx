@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api/client'
-import { setToken } from '../lib/auth'
 import { errorMessages } from '../lib/errors'
+import { useAuth } from '../context/AuthContext'
 
 /** Where LinkedIn sends the browser back. Swaps the authorisation code for a
  *  token, then gets out of the way. */
 function LinkedInCallback() {
   const navigate = useNavigate()
+  const { signIn } = useAuth()
   const [searchParams] = useSearchParams()
   const [error, setError] = useState(null)
   const ran = useRef(false)
@@ -37,11 +38,11 @@ function LinkedInCallback() {
     api
       .post('/api/auth/social/linkedin/', { code })
       .then((res) => {
-        setToken(res.data.token)
+        signIn(res.data.token)
         navigate('/', { replace: true })
       })
       .catch((err) => setError(errorMessages(err)[0]))
-  }, [navigate, searchParams])
+  }, [navigate, searchParams, signIn])
 
   return (
     <div className="mx-auto max-w-[440px] px-5 py-24 text-center">

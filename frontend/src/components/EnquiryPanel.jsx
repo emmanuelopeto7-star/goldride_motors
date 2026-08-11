@@ -1,29 +1,19 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import api from '../api/client'
-import { getToken } from '../lib/auth'
 import { errorMessages } from '../lib/errors'
+import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
 
 function EnquiryPanel({ car, title }) {
-  const [signedIn, setSignedIn] = useState(Boolean(getToken()))
+  const { user } = useAuth()
   const [authOpen, setAuthOpen] = useState(false)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [message, setMessage] = useState(`Please contact me regarding ${title}`)
-
-  const { data: me } = useQuery({
-    queryKey: ['me'],
-    queryFn: async () => {
-      const res = await api.get('/api/me/')
-      return res.data
-    },
-    enabled: signedIn,
-    retry: false,
-  })
 
   const enquiry = useMutation({
     mutationFn: async () => {
@@ -53,7 +43,7 @@ function EnquiryPanel({ car, title }) {
         <p className="mt-6 border-t border-line pt-6 text-model">
           Thank you — your enquiry has been sent. Our sales team will be in touch.
         </p>
-      ) : signedIn ? (
+      ) : user ? (
         <form onSubmit={handleSubmit} className="mt-6 space-y-4 border-t border-line pt-6">
           <input
             aria-label="Your name"
@@ -81,10 +71,8 @@ function EnquiryPanel({ car, title }) {
             className="w-full border border-line bg-surface p-4 text-model outline-none focus:border-ink"
           />
 
-          {me?.email && (
-            <p className="text-meta text-ink-mute">
-              We will reply to {me.email}
-            </p>
+          {user.email && (
+            <p className="text-meta text-ink-mute">We will reply to {user.email}</p>
           )}
 
           {enquiry.isError && (
@@ -120,12 +108,7 @@ function EnquiryPanel({ car, title }) {
         </div>
       )}
 
-      {authOpen && (
-        <AuthModal
-          onClose={() => setAuthOpen(false)}
-          onSignedIn={() => setSignedIn(true)}
-        />
-      )}
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
     </aside>
   )
 }
