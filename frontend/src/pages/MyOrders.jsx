@@ -108,6 +108,15 @@ function MyOrders() {
                 )}
               </div>
 
+              {order.token && (
+                <Link
+                  to={`/track/${order.token}`}
+                  className="mt-8 inline-block text-meta text-ink underline"
+                >
+                  Tracking link
+                </Link>
+              )}
+
               {order.milestones?.length > 0 && (
                 <details className="mt-8">
                   <summary className="cursor-pointer text-meta text-ink underline">

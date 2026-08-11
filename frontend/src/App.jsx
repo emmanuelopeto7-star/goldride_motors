@@ -11,6 +11,7 @@ import MyProfile from './pages/MyProfile'
 import MyRequests from './pages/MyRequests'
 import MySaved from './pages/MySaved'
 import NotFound from './pages/NotFound'
+import TrackOrder from './pages/TrackOrder'
 
 function App() {
   return (
@@ -19,6 +20,8 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/cars/:id" element={<CarDetail />} />
         <Route path="/auth/linkedin/callback" element={<LinkedInCallback />} />
+        {/* Public: the UUID is the credential, so no guard here. */}
+        <Route path="/track/:token" element={<TrackOrder />} />
 
         {/* One guard for the whole account area, one shell for its tabs. */}
         <Route
