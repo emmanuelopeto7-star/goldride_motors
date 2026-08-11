@@ -35,11 +35,13 @@ from goldride_app.views import (
     SocialLoginView,
     VerifyEmailView,
 )
+from cars.views import HeroBannerView
 from imports.views import MyOrdersView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/cars/', include('cars.urls')),
+    path('api/hero/', HeroBannerView.as_view()),
     path('api/inquiries/', include('inquiries.urls')),
     path('api/track/', include('imports.urls')),
     path('api/auth/login/', obtain_auth_token),
