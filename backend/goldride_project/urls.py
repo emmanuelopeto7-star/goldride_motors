@@ -31,7 +31,9 @@ from goldride_app.views import (
     LogoutView,
     MeView,
     RegisterView,
+    ResendVerificationView,
     SocialLoginView,
+    VerifyEmailView,
 )
 from imports.views import MyOrdersView
 
@@ -45,6 +47,8 @@ urlpatterns = [
     path('api/auth/logout/', LogoutView.as_view()),
     path('api/auth/register/', RegisterView.as_view()),
     path('api/auth/social/<str:provider>/', SocialLoginView.as_view()),
+    path('api/auth/verify-email/resend/', ResendVerificationView.as_view()),
+    path('api/auth/verify-email/<str:token>/', VerifyEmailView.as_view()),
     path('api/me/', MeView.as_view()),
     path('api/my/orders/', MyOrdersView.as_view()),
     path('api/purchases/', include('purchases.urls')),
