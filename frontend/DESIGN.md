@@ -82,6 +82,18 @@ in review ("breaks §3.2 — cards must have radius 0").
 2. Model card: 88px square thumb left, name 15px + "N LISTINGS" 11px uppercase, chevron right.
 3. Carousel arrows: 40px bordered circles, top-right of section.
 
+## 9. Modal
+
+1. Scrim: ink at 50%, sitting above the sticky header.
+2. Dialog: 440px max width, 1px `#E4E2DD` border, page surface, radius 0.
+3. Padding 48px.
+4. **No shadow** — the scrim does the separating, so §3.2 survives intact.
+5. Title: display serif, 32px, centred.
+6. Fields: 48px tall, 1px border, white fill, border goes to `#1A1A1A` on focus.
+7. Primary action: 48px, black fill, white 11px uppercase label, full width.
+8. Closes on Escape, on scrim click, and on the X. Body scroll locks while open,
+   and unlocks on unmount.
+
 ---
 
 # Adding the hero image to the home page
