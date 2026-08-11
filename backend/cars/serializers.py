@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Car, CarImage, HeroBanner
+from .models import Car, CarImage, Favourite, HeroBanner
 
 
 class CarMakeSerializer(serializers.Serializer):
@@ -8,6 +8,22 @@ class CarMakeSerializer(serializers.Serializer):
 
     make = serializers.CharField()
     count = serializers.IntegerField()
+
+
+class FavouriteSerializer(serializers.ModelSerializer):
+    """Write a car id, read the whole car back - the saved list is a grid of
+    cards, so it needs everything a card needs."""
+
+    car = serializers.PrimaryKeyRelatedField(queryset=Car.objects.all())
+    car_detail = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Favourite
+        fields = ["id", "car", "car_detail", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_car_detail(self, favourite):
+        return CarSerializer(favourite.car, context=self.context).data
 
 
 class HeroBannerSerializer(serializers.ModelSerializer):

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -68,9 +69,37 @@ class Car(models.Model):
     vin = models.CharField(max_length=17, blank=True)
     reference = models.CharField(max_length=40, blank=True)
 
+    # Blank for our own photography. Filled when an image is used under a
+    # licence that requires crediting the photographer - CC BY-SA and similar.
+    photo_credit = models.CharField(max_length=200, blank=True)
+    photo_source = models.URLField(blank=True)
+
     def __str__(self):
         return f"{self.make} {self.model} ({self.year}) - {self.condition} - ${self.price} - {self.description}"
     image=models.ImageField(upload_to='cars/', blank=True)    
+
+class Favourite(models.Model):
+    """A car someone has saved. CASCADE both ways: a saved car is a bookmark,
+    not a record worth outliving either side of it."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="favourites"
+    )
+    car = models.ForeignKey(
+        Car, on_delete=models.CASCADE, related_name="favourited_by"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            # Saving twice is the same as saving once.
+            models.UniqueConstraint(fields=["user", "car"], name="unique_favourite")
+        ]
+
+    def __str__(self):
+        return f"{self.user} saved {self.car}"
+
 
 class CarImage(models.Model):
     car=models.ForeignKey(Car, on_delete=models.CASCADE, related_name='images')

@@ -5,7 +5,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from .models import Car, HeroBanner
+from django.contrib.auth import get_user_model
+
+from .models import Car, Favourite, HeroBanner
 
 # Uploads in tests must not land in the real media folder - without this every
 # run leaves another hero_XXXX.jpg behind next to genuine content.
@@ -74,6 +76,78 @@ class CarMakesTests(APITestCase):
         make_car()
 
         self.assertEqual(self.client.get(self.url).status_code, 200)
+
+
+class FavouriteTests(APITestCase):
+    url = "/api/favourites/"
+
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user("saver", password="pw-for-tests-1")
+        self.other = User.objects.create_user("stranger", password="pw-for-tests-2")
+        self.car = make_car()
+
+    def test_requires_signing_in(self):
+        """There is nobody to save a car against otherwise."""
+        self.assertEqual(self.client.get(self.url).status_code, 401)
+        self.assertEqual(self.client.post(self.url, {"car": self.car.pk}).status_code, 401)
+
+    def test_saves_a_car(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(self.url, {"car": self.car.pk})
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Favourite.objects.filter(user=self.user, car=self.car).exists())
+
+    def test_saving_twice_is_a_no_op(self):
+        self.client.force_authenticate(self.user)
+        self.client.post(self.url, {"car": self.car.pk})
+
+        response = self.client.post(self.url, {"car": self.car.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Favourite.objects.filter(user=self.user).count(), 1)
+
+    def test_lists_only_your_own(self):
+        Favourite.objects.create(user=self.other, car=self.car)
+        mine = make_car(make="Mazda", model="Demio")
+        Favourite.objects.create(user=self.user, car=mine)
+
+        self.client.force_authenticate(self.user)
+        response = self.client.get(self.url)
+
+        results = response.data["results"] if "results" in response.data else response.data
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["car"], mine.pk)
+
+    def test_returns_the_whole_car_for_the_grid(self):
+        Favourite.objects.create(user=self.user, car=self.car)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get(self.url)
+        results = response.data["results"] if "results" in response.data else response.data
+
+        self.assertEqual(results[0]["car_detail"]["make"], "Toyota")
+        self.assertIn("images", results[0]["car_detail"])
+
+    def test_removes_by_car_id(self):
+        Favourite.objects.create(user=self.user, car=self.car)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.delete(f"{self.url}{self.car.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Favourite.objects.filter(user=self.user).exists())
+
+    def test_cannot_remove_someone_elses(self):
+        Favourite.objects.create(user=self.other, car=self.car)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.delete(f"{self.url}{self.car.pk}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Favourite.objects.filter(user=self.other).exists())
 
 
 @MEDIA_OVERRIDE

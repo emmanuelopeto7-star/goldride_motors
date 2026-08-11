@@ -4,6 +4,7 @@ import Page from '../components/Page'
 const TABS = [
   ['/my/orders', 'Orders'],
   ['/my/requests', 'Requests'],
+  ['/my/saved', 'Saved'],
   ['/my/enquiries', 'Enquiries'],
   ['/my/profile', 'Profile'],
 ]

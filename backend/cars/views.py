@@ -1,9 +1,15 @@
 from django.db.models import Count
-from rest_framework import generics,filters
+from django.shortcuts import get_object_or_404
+from rest_framework import generics,filters,permissions,status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Car, HeroBanner
-from .serializers import CarMakeSerializer, CarSerializer, HeroBannerSerializer
+from .models import Car, Favourite, HeroBanner
+from .serializers import (
+    CarMakeSerializer,
+    CarSerializer,
+    FavouriteSerializer,
+    HeroBannerSerializer,
+)
 from django_filters.rest_framework import DjangoFilterBackend
 
 class carListVeiw(generics.ListAPIView):
@@ -38,6 +44,37 @@ class CarMakesView(generics.ListAPIView):
             .annotate(count=Count("id"))
             .order_by("-count", "make")
         )
+
+
+class FavouriteView(generics.ListCreateAPIView):
+    """The caller's own saved cars. Signed in only - there is nobody to save
+    them against otherwise."""
+
+    serializer_class = FavouriteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Favourite.objects.filter(user=self.request.user).select_related("car")
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Saving something already saved is not an error, it is a no-op.
+        favourite, created = Favourite.objects.get_or_create(
+            user=request.user, car=serializer.validated_data["car"]
+        )
+        out = self.get_serializer(favourite)
+        return Response(out.data, status=201 if created else 200)
+
+
+class FavouriteDestroyView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, car_id):
+        favourite = get_object_or_404(Favourite, user=request.user, car_id=car_id)
+        favourite.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class HeroBannerView(APIView):

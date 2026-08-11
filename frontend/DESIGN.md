@@ -125,6 +125,37 @@ in review ("breaks §3.2 — cards must have radius 0").
 8. Closes on Escape, on scrim click, and on the X. Body scroll locks while open,
    and unlocks on unmount.
 
+### 9b. Image viewer
+
+1. Full screen, edge to edge — a photograph is the content, not an illustration
+   inside a card.
+2. Surface is `#1A1A1A` at 95%, not white. Photographs need a neutral dark
+   surround to be judged; this is the one place §2 gives way, and only because
+   nothing here is chrome.
+3. The image is **contained, never cropped**. Cropping is right for a card and
+   wrong for a viewer.
+4. Previous / next as 40px+ bordered circles at the vertical centre, white on
+   the dark surface.
+5. Arrow keys step through, Escape closes, and the position reads `3 / 12`.
+6. Thumbnail strip along the bottom, 64px, current one outlined, the rest at
+   50% opacity.
+
+## 10. Footer
+
+1. Surface `#1A1A1A`, text white — a deliberate exception to §2.2, because a long
+   page needs a terminator and a white footer just trails off. Same class of
+   exception as the hero scrim (§5.3) and the image viewer (§9b.2).
+2. Four columns on desktop, two on tablet, stacked on mobile. 96px top margin,
+   64–96px internal padding.
+3. Column headings 11px uppercase at 50% white. Links 13px at 70%, going to
+   100% on hover. No underlines here — the whole column is links, so underlining
+   every one is noise rather than signal.
+4. **Only links that resolve.** Browse and Makes are filter URLs, so they work.
+   Nothing points at a page that does not exist yet.
+5. Makes are pulled live from `/api/cars/makes/` with counts — the same query the
+   filter bar uses, so it costs no extra request.
+6. Bottom bar above a 15% white rule: copyright left, the good-faith notice right.
+
 ---
 
 # Adding the hero image to the home page

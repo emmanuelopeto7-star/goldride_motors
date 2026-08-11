@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../lib/format'
-import { useFavourite } from '../hooks/useFavourite'
+import { useFavourites } from '../hooks/useFavourites'
 
 function CarCard({ car }) {
   const photoCount = car.images.length + (car.image ? 1 : 0)
-  const [favourite, toggleFavourite] = useFavourite(car.id)
+  const { isSaved, toggle } = useFavourites()
+  const favourite = isSaved(car.id)
 
   return (
     <article className="group relative border border-line bg-surface transition-colors hover:border-line-hover">
@@ -24,7 +25,7 @@ function CarCard({ car }) {
         {/* z-10 to sit above the stretched link below. */}
         <button
           type="button"
-          onClick={toggleFavourite}
+          onClick={() => toggle(car.id)}
           aria-pressed={favourite}
           aria-label={favourite ? 'Remove from saved' : 'Save this car'}
           className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface"

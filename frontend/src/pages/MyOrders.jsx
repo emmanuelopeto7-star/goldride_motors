@@ -6,7 +6,6 @@ import { formatPrice } from '../lib/format'
 import EmptyState from '../components/EmptyState'
 import ErrorState from '../components/ErrorState'
 import OrderProgress from '../components/OrderProgress'
-import Page from '../components/Page'
 import PaymentRow from '../components/PaymentRow'
 
 function MyOrders() {
@@ -31,23 +30,11 @@ function MyOrders() {
     refetchInterval: () => (Date.now() < pollUntil ? 5000 : false),
   })
 
-  if (orders.isPending) {
-    return (
-      <Page>
-        <div className="h-8 w-64 animate-pulse bg-line" />
-        <div className="mt-8 h-64 w-full animate-pulse bg-line" />
-      </Page>
-    )
-  }
+  if (orders.isPending) return <div className="h-64 w-full animate-pulse bg-line" />
 
   if (orders.isError) {
     return (
-      <Page>
-        <ErrorState
-          message="We could not load your orders."
-          onRetry={orders.refetch}
-        />
-      </Page>
+      <ErrorState message="We could not load your orders." onRetry={orders.refetch} />
     )
   }
 
@@ -56,28 +43,21 @@ function MyOrders() {
 
   if (orderList.length === 0) {
     return (
-      <Page>
-        <h1 className="font-serif text-h1">My orders</h1>
-        <div className="mt-8">
-          <EmptyState
-            title="No orders yet"
-            message="When a purchase is approved it appears here, with its payment and import progress."
-            action={
-              <Link to="/" className="mt-8 inline-block text-meta text-ink underline">
-                Browse cars
-              </Link>
-            }
-          />
-        </div>
-      </Page>
+      <EmptyState
+        title="No orders yet"
+        message="When a purchase is approved it appears here, with its payment and import progress."
+        action={
+          <Link to="/" className="mt-8 inline-block text-meta text-ink underline">
+            Browse cars
+          </Link>
+        }
+      />
     )
   }
 
   return (
-    <Page>
-      <h1 className="font-serif text-h1">My orders</h1>
-
-      <div className="mt-12 space-y-8">
+    <>
+      <div className="space-y-8">
         {orderList.map((order) => {
           const mine = paymentList.filter((payment) => payment.order === order.id)
 
@@ -152,7 +132,7 @@ function MyOrders() {
           )
         })}
       </div>
-    </Page>
+    </>
   )
 }
 
