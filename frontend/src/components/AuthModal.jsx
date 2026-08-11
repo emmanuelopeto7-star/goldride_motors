@@ -4,6 +4,7 @@ import api from '../api/client'
 import { setToken } from '../lib/auth'
 import { errorMessages } from '../lib/errors'
 import Modal from './Modal'
+import SocialButtons from './SocialButtons'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -13,6 +14,7 @@ function AuthModal({ onClose, onSignedIn }) {
   const [firstName, setFirstName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [socialError, setSocialError] = useState(null)
 
   const isRegister = mode === 'register'
 
@@ -47,7 +49,20 @@ function AuthModal({ onClose, onSignedIn }) {
     <Modal onClose={onClose}>
       <h2 className="text-center font-serif text-section">Log In or Sign Up</h2>
 
-      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+      <div className="mt-8">
+        <SocialButtons
+          onSignedIn={(token) => {
+            setToken(token)
+            onSignedIn()
+            onClose()
+          }}
+          onError={(error) => setSocialError(errorMessages(error)[0])}
+        />
+      </div>
+
+      {socialError && <p className="mt-4 text-meta">{socialError}</p>}
+
+      <form onSubmit={handleSubmit} className="mt-4 space-y-4">
         {isRegister && (
           <input
             aria-label="First name"
