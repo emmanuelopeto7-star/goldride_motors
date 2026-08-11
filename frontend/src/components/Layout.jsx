@@ -1,16 +1,32 @@
 import { useState } from 'react'
-import { Link, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom'
 import api from '../api/client'
 import { getToken, clearToken } from '../lib/auth'
+import { useScrolled } from '../hooks/useScrolled'
 import AuthModal from './AuthModal'
+import BrandStrip from './BrandStrip'
 
+const pillBase =
+  'flex h-10 shrink-0 items-center rounded-full border px-5 text-meta transition-colors duration-200'
 
 function Layout() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [term, setTerm] = useState(searchParams.get('search') ?? '')
   const [authOpen, setAuthOpen] = useState(false)
   const [signedIn, setSignedIn] = useState(Boolean(getToken()))
+
+  const scrolled = useScrolled(80)
+  // Only the home page has a hero, so only it can be overlaid (§4.6).
+  const hasHero = location.pathname === '/'
+  const overlay = hasHero && !scrolled
 
   async function handleSignOut() {
     try {
@@ -30,7 +46,11 @@ function Layout() {
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <header className="sticky top-0 z-50 border-b border-line bg-surface">
+      <header
+        className={`${hasHero ? 'fixed' : 'sticky'} top-0 z-50 w-full transition-colors duration-200 ${
+          overlay ? 'text-surface' : 'border-b border-line bg-surface text-ink'
+        }`}
+      >
         <div className="mx-auto flex h-[72px] max-w-[1440px] items-center gap-6 px-5 lg:px-12">
           <button type="button" aria-label="Open menu" className="shrink-0">
             <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
@@ -48,16 +68,19 @@ function Layout() {
               value={term}
               onChange={(event) => setTerm(event.target.value)}
               placeholder="Search make or model"
-              className="h-11 w-full rounded-full bg-search px-5 text-meta outline-none"
+              className={`h-11 w-full rounded-full px-5 text-meta outline-none transition-colors duration-200 ${
+                overlay
+                  ? 'border border-white/25 bg-white/15 text-surface placeholder-white/70'
+                  : 'bg-search text-ink'
+              }`}
             />
           </form>
 
-
-                   {signedIn ? (
+          {signedIn ? (
             <button
               type="button"
               onClick={handleSignOut}
-              className="flex h-10 shrink-0 items-center rounded-full border border-line px-5 text-meta"
+              className={`${pillBase} ${overlay ? 'border-white/40' : 'border-line'}`}
             >
               Sign out
             </button>
@@ -65,18 +88,21 @@ function Layout() {
             <button
               type="button"
               onClick={() => setAuthOpen(true)}
-              className="flex h-10 shrink-0 items-center rounded-full border border-line px-5 text-meta"
+              className={`${pillBase} ${overlay ? 'border-white/40' : 'border-line'}`}
             >
               Sign in
             </button>
           )}
         </div>
+
+        <BrandStrip overlay={overlay} />
       </header>
 
       <main>
         <Outlet />
       </main>
-            {authOpen && (
+
+      {authOpen && (
         <AuthModal
           onClose={() => setAuthOpen(false)}
           onSignedIn={() => setSignedIn(true)}
