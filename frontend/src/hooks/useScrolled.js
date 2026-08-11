@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-/** True once the page has moved further than `threshold` pixels down. */
+/** True once the page has moved past `threshold` pixels (DESIGN.md §4.5). */
 export function useScrolled(threshold = 80) {
   const [scrolled, setScrolled] = useState(() => window.scrollY > threshold)
 
@@ -9,7 +9,7 @@ export function useScrolled(threshold = 80) {
       setScrolled(window.scrollY > threshold)
     }
 
-    // Run once: a reload part-way down the page must not start in overlay mode.
+    // Read once on mount: a reload halfway down a page must not start overlaid.
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
 

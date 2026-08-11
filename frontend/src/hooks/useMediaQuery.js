@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export function useMediaQuery(query) {
+  // Lazy initialiser: runs once on mount, not on every render.
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
 
   useEffect(() => {
