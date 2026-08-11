@@ -2,26 +2,45 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import api from '../api/client'
 import { setToken } from '../lib/auth'
+import { errorMessages } from '../lib/errors'
 import Modal from './Modal'
 
+const fieldClass =
+  'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
+
 function AuthModal({ onClose, onSignedIn }) {
+  const [mode, setMode] = useState('login')
+  const [firstName, setFirstName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
-  const login = useMutation({
-    mutationFn: async (credentials) => {
-      const res = await api.post('/api/auth/login/email/', credentials)
+  const isRegister = mode === 'register'
+
+  const auth = useMutation({
+    mutationFn: async () => {
+      const url = isRegister ? '/api/auth/register/' : '/api/auth/login/email/'
+      const body = isRegister
+        ? { first_name: firstName, email, password }
+        : { email, password }
+
+      const res = await api.post(url, body)
       return res.data
     },
-     onSuccess: (data) => {
+    onSuccess: (data) => {
       setToken(data.token)
       onSignedIn()
       onClose()
     },
   })
-   function handleSubmit(event) {
+
+  function handleSubmit(event) {
     event.preventDefault()
-    login.mutate({ email, password })
+    auth.mutate()
+  }
+
+  function switchMode() {
+    setMode(isRegister ? 'login' : 'register')
+    auth.reset()
   }
 
   return (
@@ -29,13 +48,25 @@ function AuthModal({ onClose, onSignedIn }) {
       <h2 className="text-center font-serif text-section">Log In or Sign Up</h2>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        {isRegister && (
+          <input
+            aria-label="First name"
+            placeholder="First name"
+            value={firstName}
+            onChange={(event) => setFirstName(event.target.value)}
+            className={fieldClass}
+            required
+          />
+        )}
+
         <input
           type="email"
           aria-label="Email"
           placeholder="Email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink"
+          className={fieldClass}
+          required
         />
 
         <input
@@ -44,20 +75,39 @@ function AuthModal({ onClose, onSignedIn }) {
           placeholder="Password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink"
+          className={fieldClass}
+          required
         />
-         {login.isError && (
-          <p className="text-meta">Incorrect email or password.</p>
+
+        {auth.isError && (
+          <ul className="space-y-1">
+            {errorMessages(auth.error).map((message) => (
+              <li key={message} className="text-meta">
+                {message}
+              </li>
+            ))}
+          </ul>
         )}
 
         <button
           type="submit"
-          disabled={login.isPending}
+          disabled={auth.isPending}
           className="h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
-          {login.isPending ? 'Signing in…' : 'Continue'}
+          {auth.isPending
+            ? 'Please wait…'
+            : isRegister
+              ? 'Create account'
+              : 'Continue'}
         </button>
       </form>
+
+      <p className="mt-6 text-center text-meta text-ink-soft">
+        {isRegister ? 'Already have an account? ' : 'New to Goldride? '}
+        <button type="button" onClick={switchMode} className="text-ink underline">
+          {isRegister ? 'Sign in' : 'Create an account'}
+        </button>
+      </p>
     </Modal>
   )
 }
