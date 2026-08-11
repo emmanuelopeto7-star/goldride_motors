@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
@@ -35,10 +35,13 @@ function MobileMenu({ onClose, onSignIn }) {
     },
   })
 
-  // Navigating away should close it - otherwise the panel sits over the page
-  // you just asked for.
+  // Navigating away should close it, or the panel sits over the page you just
+  // asked for. Compare where we opened against where we are now - counting
+  // runs does not survive StrictMode, which invokes every effect twice and
+  // would close the drawer the instant it opened.
+  const openedAt = useRef(location.pathname + location.search)
   useEffect(() => {
-    onClose()
+    if (location.pathname + location.search !== openedAt.current) onClose()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search])
 
