@@ -30,7 +30,7 @@ function Home() {
   const page = searchParams.get('page') ?? '1'
 
   const listRef = useRef(null)
-  const firstRender = useRef(true)
+  const openedAt = useRef(page)
 
   const params = {}
   LIST_PARAMS.forEach((key) => {
@@ -51,13 +51,14 @@ function Home() {
   })
 
   // Changing page should land on the cars, not send you back up past a
-  // full-height hero you have already scrolled through.
+  // full-height hero you have already scrolled through. Compared by value
+  // rather than by run count: StrictMode invokes effects twice, so a
+  // "skip the first run" flag would fire on arrival instead.
   useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false
-      return
+    if (page !== openedAt.current) {
+      listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      openedAt.current = page
     }
-    listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [page])
 
   const search = searchParams.get('search') ?? ''
