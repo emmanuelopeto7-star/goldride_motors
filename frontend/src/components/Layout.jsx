@@ -70,8 +70,8 @@ function Layout() {
               placeholder="Search make or model"
               className={`h-11 w-full rounded-full px-5 text-meta outline-none transition-colors duration-200 ${
                 overlay
-                  ? 'border border-white/25 bg-white/15 text-surface placeholder-white/70'
-                  : 'bg-search text-ink'
+                  ? 'border border-white/25 bg-white/15 text-surface placeholder:text-white/70'
+                  : 'bg-search text-ink placeholder:text-ink-mute'
               }`}
             />
           </form>
