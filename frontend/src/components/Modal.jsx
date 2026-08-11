@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 /** size="dialog" is the 440px card used for auth and forms.
  *  size="full" is an edge-to-edge dark surface for viewing images. */
@@ -21,10 +22,17 @@ function Modal({ onClose, children, size = 'dialog' }) {
 
   const full = size === 'full'
 
-  return (
+  // Rendered into document.body, not where it is written. A modal inside a
+  // sticky or transformed ancestor is trapped in that stacking context, and
+  // no z-index can lift it above the header from in there.
+  return createPortal(
     <div
-      className={`fixed inset-0 z-[100] flex items-center justify-center ${
-        full ? 'bg-ink/95' : 'bg-ink/50 px-5'
+      className={`fixed inset-0 z-[100] flex justify-center ${
+        full
+          ? 'items-center bg-ink/95'
+          : // Scroll the scrim, not the dialog, so a tall form is reachable on
+            // a short screen instead of being clipped at both ends.
+            'items-start overflow-y-auto bg-ink/50 px-5 py-10'
       }`}
       onClick={onClose}
     >
@@ -34,7 +42,7 @@ function Modal({ onClose, children, size = 'dialog' }) {
         className={
           full
             ? 'relative h-full w-full'
-            : 'relative w-full max-w-[440px] border border-line bg-page p-12'
+            : 'relative my-auto w-full max-w-[440px] border border-line bg-page p-8 lg:p-12'
         }
         // Stops a click inside the panel bubbling up to the scrim's close.
         onClick={(event) => event.stopPropagation()}
@@ -54,7 +62,8 @@ function Modal({ onClose, children, size = 'dialog' }) {
 
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
