@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import api from '../api/client'
-import { setToken } from '../lib/auth'
 import { errorMessages } from '../lib/errors'
+import { useAuth } from '../context/AuthContext'
 import Modal from './Modal'
 import SocialButtons from './SocialButtons'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
 
-function AuthModal({ onClose, onSignedIn }) {
+function AuthModal({ onClose }) {
+  const { signIn } = useAuth()
   const [mode, setMode] = useState('login')
   const [firstName, setFirstName] = useState('')
   const [email, setEmail] = useState('')
@@ -29,8 +30,7 @@ function AuthModal({ onClose, onSignedIn }) {
       return res.data
     },
     onSuccess: (data) => {
-      setToken(data.token)
-      onSignedIn()
+      signIn(data.token)
       onClose()
     },
   })
@@ -52,8 +52,7 @@ function AuthModal({ onClose, onSignedIn }) {
       <div className="mt-8">
         <SocialButtons
           onSignedIn={(token) => {
-            setToken(token)
-            onSignedIn()
+            signIn(token)
             onClose()
           }}
           onError={(error) => setSocialError(errorMessages(error)[0])}

@@ -6,10 +6,9 @@ import {
   useNavigate,
   useSearchParams,
 } from 'react-router-dom'
-import api from '../api/client'
-import { getToken, clearToken } from '../lib/auth'
 import { useScrolled } from '../hooks/useScrolled'
 import { useHeroBanner } from '../hooks/useHeroBanner'
+import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 import BrandStrip from './BrandStrip'
 
@@ -22,7 +21,7 @@ function Layout() {
   const [searchParams] = useSearchParams()
   const [term, setTerm] = useState(searchParams.get('search') ?? '')
   const [authOpen, setAuthOpen] = useState(false)
-  const [signedIn, setSignedIn] = useState(Boolean(getToken()))
+  const { user, signOut } = useAuth()
 
   const scrolled = useScrolled(80)
   // Shares a cache entry with Hero, so this costs no extra request. Keyed on
@@ -31,16 +30,6 @@ function Layout() {
   const { data: banner, isPending: bannerPending } = useHeroBanner()
   const hasHero = location.pathname === '/' && (bannerPending || Boolean(banner))
   const overlay = hasHero && !scrolled
-
-  async function handleSignOut() {
-    try {
-      await api.post('/api/auth/logout/')
-    } catch {
-      // The token may already be dead server-side; clear it locally regardless.
-    }
-    clearToken()
-    setSignedIn(false)
-  }
 
   function handleSubmit(event) {
     event.preventDefault()
@@ -80,10 +69,10 @@ function Layout() {
             />
           </form>
 
-          {signedIn ? (
+          {user ? (
             <button
               type="button"
-              onClick={handleSignOut}
+              onClick={signOut}
               className={`${pillBase} ${overlay ? 'border-white/40' : 'border-line'}`}
             >
               Sign out
@@ -106,12 +95,7 @@ function Layout() {
         <Outlet />
       </main>
 
-      {authOpen && (
-        <AuthModal
-          onClose={() => setAuthOpen(false)}
-          onSignedIn={() => setSignedIn(true)}
-        />
-      )}
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
     </div>
   )
 }
