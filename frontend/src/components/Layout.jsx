@@ -11,6 +11,7 @@ import { useHeroBanner } from '../hooks/useHeroBanner'
 import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 import BrandStrip from './BrandStrip'
+import Footer from './Footer'
 
 const pillBase =
   'flex h-10 shrink-0 items-center rounded-full border px-5 text-meta transition-colors duration-200'
@@ -94,6 +95,8 @@ function Layout() {
       <main>
         <Outlet />
       </main>
+
+      <Footer />
 
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
     </div>
