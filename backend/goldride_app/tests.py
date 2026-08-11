@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.core.cache import cache
 from django.contrib.auth.models import Group
 from django.test import override_settings
@@ -634,6 +635,188 @@ class PurchaseRequestEmailTests(APITestCase):
         self.sign_in(User.objects.create_user("user1a2b", email=""))
 
         self.assertEqual(self.client.get(self.URL).status_code, 200)
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.TokenAuthentication",
+        ],
+    },
+    FRONTEND_URL="http://localhost:5173",
+)
+class EmailVerificationTests(APITestCase):
+    """The root cause: signup never proved the address. Now it can."""
+
+    def setUp(self):
+        cache.clear()
+        mail.outbox = []
+
+    def register(self, email="amina@example.com"):
+        return self.client.post(
+            "/api/auth/register/",
+            {
+                "email": email,
+                "first_name": "Amina",
+                "password": "Sh1llings!2026",
+            },
+            format="json",
+        )
+
+    def link_from_email(self):
+        body = mail.outbox[-1].body
+        return [word for word in body.split() if "/verify-email/" in word][0]
+
+    def test_registering_sends_a_link_to_the_address(self):
+        self.register()
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["amina@example.com"])
+        self.assertIn("/api/auth/verify-email/", mail.outbox[0].body)
+
+    def test_the_account_starts_unverified(self):
+        self.register()
+        user = User.objects.get(email="amina@example.com")
+
+        self.assertFalse(get_profile(user).email_verified)
+
+    def test_opening_the_link_verifies_the_address(self):
+        self.register()
+
+        response = self.client.get(self.link_from_email())
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("verified=1", response["Location"])
+        user = User.objects.get(email="amina@example.com")
+        self.assertTrue(get_profile(user).email_verified)
+
+    def test_opening_it_twice_is_harmless(self):
+        self.register()
+        link = self.link_from_email()
+        self.client.get(link)
+
+        response = self.client.get(link)
+
+        self.assertIn("verified=1", response["Location"])
+
+    def test_a_tampered_token_verifies_nothing(self):
+        self.register()
+        link = self.link_from_email()
+
+        response = self.client.get(link[:-6] + "abcde/")
+
+        self.assertIn("verified=0", response["Location"])
+        user = User.objects.get(email="amina@example.com")
+        self.assertFalse(get_profile(user).email_verified)
+
+    def test_an_expired_link_is_refused(self):
+        self.register()
+        link = self.link_from_email()
+
+        with override_settings(EMAIL_VERIFICATION_TIMEOUT=-1):
+            response = self.client.get(link)
+
+        self.assertIn("verified=0", response["Location"])
+        user = User.objects.get(email="amina@example.com")
+        self.assertFalse(get_profile(user).email_verified)
+
+    def test_a_link_stops_working_once_the_address_moves(self):
+        """Otherwise a link mailed to the old address verifies the new one."""
+        self.register()
+        link = self.link_from_email()
+        user = User.objects.get(email="amina@example.com")
+        user.email = "elsewhere@example.com"
+        user.save()
+
+        response = self.client.get(link)
+
+        self.assertIn("verified=0", response["Location"])
+        self.assertFalse(get_profile(user).email_verified)
+
+    def test_changing_a_verified_address_makes_it_unverified_again(self):
+        """The linking hole, through a different door: verify one address,
+        then move the account onto somebody else's and keep the tick."""
+        self.register()
+        self.client.get(self.link_from_email())
+        user = User.objects.get(email="amina@example.com")
+        self.assertTrue(get_profile(user).email_verified)
+
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.client.patch("/api/me/", {"email": "victim@example.com"}, format="json")
+
+        user.refresh_from_db()
+        self.assertEqual(user.email, "victim@example.com")
+        self.assertFalse(get_profile(user).email_verified)
+        # and the new address is asked to confirm itself
+        self.assertEqual(mail.outbox[-1].to, ["victim@example.com"])
+
+    @patch("goldride_app.views.verify_google")
+    def test_verifying_opens_the_door_the_409_closed(self, verify):
+        """The whole point: a refused link becomes a working one."""
+        self.register(email="amina@example.com")
+        verify.return_value = profile("g-1", "amina@example.com", verified=True)
+
+        refused = self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+        self.assertEqual(refused.status_code, 409)
+
+        self.client.get(self.link_from_email())
+
+        allowed = self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.json()["username"], "amina")
+        self.assertEqual(User.objects.count(), 1)
+
+    def test_resending_gives_a_fresh_link(self):
+        self.register()
+        user = User.objects.get(email="amina@example.com")
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        response = self.client.post("/api/auth/verify-email/resend/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 2)
+        self.client.get(self.link_from_email())
+        self.assertTrue(get_profile(user).email_verified)
+
+    def test_an_account_with_no_address_is_not_mailed(self):
+        user = User.objects.create_user("user1a2b", email="")
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        response = self.client.post("/api/auth/verify-email/resend/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_anonymous_cannot_ask_for_a_resend(self):
+        self.assertEqual(
+            self.client.post("/api/auth/verify-email/resend/").status_code, 401
+        )
+
+    def test_me_reports_the_state(self):
+        self.register()
+        user = User.objects.get(email="amina@example.com")
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        self.assertFalse(self.client.get("/api/me/").json()["email_verified"])
+
+        self.client.get(self.link_from_email())
+
+        self.assertTrue(self.client.get("/api/me/").json()["email_verified"])
+
+    @patch("goldride_app.views.verify_google")
+    def test_a_social_signup_needs_no_link(self, verify):
+        """The provider already did it - do not mail them a second hoop."""
+        verify.return_value = profile("g-2", "social@example.com", verified=True)
+
+        self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+
+        self.assertEqual(len(mail.outbox), 0)
+        user = User.objects.get(email="social@example.com")
+        self.assertTrue(get_profile(user).email_verified)
 
 
 class SocialAccountModelTests(APITestCase):
