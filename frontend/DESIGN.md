@@ -10,6 +10,7 @@ in review ("breaks §3.2 — cards must have radius 0").
 | Display serif  | Playfair Display / Cormorant / Libre Baskerville — wordmark, H1, section titles only |
 | UI sans        | Inter / system stack — everything else                                    |
 | H1             | 44px / 1.1                                                                |
+| Hero headline  | 64px / 1.05 desktop, 36px mobile — §5 only                                 |
 | Section title  | 32px / 1.2                                                                |
 | Price          | 20px semibold                                                             |
 | Model          | 15px                                                                      |
@@ -49,13 +50,43 @@ in review ("breaks §3.2 — cards must have radius 0").
    (620px max, 44px tall, `#F4F2EE`) · "Sell With Us" link · auth pill (40px, bordered).
 3. **Row 2:** brand strip 48px, sans 14px, 24px gaps, horizontal scroll with fading
    edges, active item underlined.
+4. **Overlay mode.** On a page with a hero the header is transparent and sits *on*
+   the image — no fill, no bottom border. Wordmark, brand strip, links and icons
+   invert to white; the search pill becomes white at 15% with a white 25% border
+   and white placeholder text.
+5. Overlay ends on scroll. Once the page has moved more than 80px the header
+   animates to its solid white state (rule 1) over 200ms and stays there.
+6. Pages with no hero use the solid state from the first paint — there is no flash
+   of transparent header.
 
 ## 5. Hero
 
-1. Full-bleed · 420px desktop, 280px mobile.
-2. Left-to-right dark scrim, `0.45 → 0`.
-3. Serif H1, white, bottom-left, 48px inset.
-4. Subline 11px uppercase, white 80%, 480px max-width, carries the live inventory count.
+1. Full-bleed, and it starts at the **top of the document**, behind the header —
+   the header's 120px (72 + 48) overlays the image rather than sitting above it.
+2. **Full viewport height** (`svh`, not `vh` — mobile browser chrome makes `vh`
+   overshoot and crop the headline). The overlaid header eats the top 120px; the
+   headline and subline sit against the bottom edge.
+3. Left-to-right dark scrim, `0.45 → 0`. It has a second job in overlay mode:
+   keeping the white wordmark and brand strip legible over the photograph.
+4. Hero headline (§1) in the display serif, white, bottom-left, 48px inset
+   desktop / 20px mobile.
+5. Subline 11px uppercase, white 80%, **900px max-width**, wrapping to at most two
+   lines, carrying the live inventory count.
+
+### 5b. Hero video (optional)
+
+1. A poster image is **always required**, video or not. It is the first paint, the
+   mobile experience, and the fallback — never an afterthought.
+2. `autoplay muted loop playsinline`. Autoplay without `muted` is blocked by every
+   browser; without `playsinline` iOS takes over the screen.
+3. Strip the audio track before upload rather than relying on `muted`.
+4. Under 3MB, 6–10s, seamlessly looping, 1920×1080 is ample behind a scrim.
+5. **Mobile shows the poster, not the video.** Below 768px the video never loads.
+6. `prefers-reduced-motion: reduce` shows the poster. This is an accessibility
+   setting people choose because motion makes them unwell, not a preference to
+   second-guess.
+7. Composition rules are unchanged: the left third stays calm for the whole loop,
+   or the headline fights the footage every 8 seconds.
 
 ## 6. Listing card
 
