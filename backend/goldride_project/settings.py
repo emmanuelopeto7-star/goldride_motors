@@ -34,7 +34,7 @@ LINKEDIN_CLIENT_SECRET = config('LINKEDIN_CLIENT_SECRET', default='')
 LINKEDIN_REDIRECT_URI = config('LINKEDIN_REDIRECT_URI', default='')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG')
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 allowed_hosts_str = config('ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(',') if host.strip()]
