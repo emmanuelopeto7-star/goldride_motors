@@ -1,5 +1,5 @@
-from drf_spectacular.utils import extend_schema
-from rest_framework import generics, status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import generics, serializers, status
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -24,6 +24,32 @@ class PurchaseRequestCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return PurchaseRequest.objects.filter(customer=self.request.user)
+
+    @extend_schema(
+        responses={
+            201: PurchaseRequestSerializer,
+            400: inline_serializer('PurchaseRequestEmailRequired', {
+                'detail': serializers.CharField(),
+                'code': serializers.CharField(),
+            }),
+        },
+        description="Ask to buy a listed car. Refused with `code: "
+                    "email_required` if the account has no email address - "
+                    "approval sends a checkout link, which needs somewhere "
+                    "to go. Social sign-ins whose provider did not verify an "
+                    "address arrive without one (`needs_email` on /api/me/).",
+    )
+    def post(self, request, *args, **kwargs):
+        if not request.user.email:
+            return Response(
+                {
+                    "detail": "Add an email address to your account before "
+                              "requesting to buy.",
+                    "code": "email_required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().post(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         purchase_request = serializer.save(customer=self.request.user)

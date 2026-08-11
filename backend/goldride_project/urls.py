@@ -26,7 +26,13 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
-from goldride_app.views import EmailLoginView, MeView, RegisterView, SocialLoginView
+from goldride_app.views import (
+    EmailLoginView,
+    LogoutView,
+    MeView,
+    RegisterView,
+    SocialLoginView,
+)
 from imports.views import MyOrdersView
 
 urlpatterns = [
@@ -36,6 +42,7 @@ urlpatterns = [
     path('api/track/', include('imports.urls')),
     path('api/auth/login/', obtain_auth_token),
     path('api/auth/login/email/', EmailLoginView.as_view()),
+    path('api/auth/logout/', LogoutView.as_view()),
     path('api/auth/register/', RegisterView.as_view()),
     path('api/auth/social/<str:provider>/', SocialLoginView.as_view()),
     path('api/me/', MeView.as_view()),

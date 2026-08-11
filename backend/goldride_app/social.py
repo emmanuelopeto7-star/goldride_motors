@@ -10,7 +10,7 @@ from django.db import IntegrityError, transaction
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
-from .models import SocialAccount
+from .models import SocialAccount, get_profile
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,17 @@ LINKEDIN_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 
 class SocialAuthError(Exception):
     """Safe to show a user. Detail goes to the log, not the response."""
+
+
+class EmailInUse(Exception):
+    """The address is on an account nobody has ever proved they own.
+
+    Deliberately not a SocialAuthError: this is not a failed sign-in, it is a
+    refusal to join two identities that have not been shown to be the same
+    person. The caller turns it into a 409 the frontend can branch on.
+    """
+
+    code = "email_in_use"
 
 
 def verify_google(credential):
@@ -110,8 +121,12 @@ def _username_base(email, uid):
     return (base or f"user{uid[:8]}")[:24] or "user"
 
 
-def _create_user(base, email, first_name, last_name):
-    """Create a user, surviving a race on the username."""
+def create_user_unique(base, email, first_name="", last_name="", password=None):
+    """Create a user, surviving a race on the username.
+
+    Registration reuses this whenever the caller left the username out, so
+    a derived name gets the same collision handling a social sign-in gets.
+    """
     for attempt in range(6):
         username = base if attempt == 0 else f"{base}-{secrets.token_hex(3)}"
         try:
@@ -121,6 +136,7 @@ def _create_user(base, email, first_name, last_name):
                     email=email,
                     first_name=first_name,
                     last_name=last_name,
+                    password=password,
                 )
         except IntegrityError:
             continue
@@ -142,12 +158,24 @@ def get_or_create_social_user(provider, profile):
         # Only ever link when the provider vouches for the address.
         user = User.objects.filter(email__iexact=claimed_email).first()
 
+        if user is not None and not get_profile(user).email_verified:
+            # Nothing ever proved that account owns the address - registration
+            # certainly did not - so the two identities cannot be assumed to
+            # be the same person. Linking here would hand this sign-in to
+            # whoever typed the address first.
+            logger.warning(
+                "Refused to link %s sign-in to unverified account %s",
+                provider,
+                user.pk,
+            )
+            raise EmailInUse(claimed_email)
+
     created = False
     if user is None:
         # An unverified address is never written to the user record: two
         # accounts must not end up holding one email, and doing so would
         # also lock the real owner out of registering with a password.
-        user = _create_user(
+        user = create_user_unique(
             # An unverified address must not reserve the username derived
             # from it either, or the real owner is squatted out.
             base=_username_base(claimed_email if verified else "", uid),
@@ -157,6 +185,13 @@ def get_or_create_social_user(provider, profile):
         )
         user.set_unusable_password()
         user.save(update_fields=["password"])
+
+        if verified:
+            # The provider vouched for it, so this account may be linked to
+            # in future - it is the one kind of account that has been proven.
+            user_profile = get_profile(user)
+            user_profile.email_verified = True
+            user_profile.save(update_fields=["email_verified"])
 
         group, _ = Group.objects.get_or_create(name="Customer")
         user.groups.add(group)

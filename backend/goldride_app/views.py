@@ -14,6 +14,7 @@ from .serializers import (
     SocialLoginSerializer,
 )
 from .social import (
+    EmailInUse,
     SocialAuthError,
     get_or_create_social_user,
     verify_google,
@@ -21,6 +22,8 @@ from .social import (
 )
 
 User = get_user_model()
+
+PROVIDER_NAMES = {"google": "Google", "linkedin": "LinkedIn"}
 
 
 class RegisterView(generics.CreateAPIView):
@@ -81,6 +84,21 @@ class EmailLoginView(APIView):
         return Response({"token": token.key})
 
 
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={204: None},
+        description="Sign out by destroying the caller's token. Tokens never "
+                    "expire on their own, so clearing the browser's storage "
+                    "would leave a working key behind.",
+    )
+    def post(self, request):
+        Token.objects.filter(user=request.user).delete()
+        return Response(status=204)
+
+
 class SocialLoginView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -88,16 +106,25 @@ class SocialLoginView(APIView):
 
     @extend_schema(
         request=SocialLoginSerializer,
-        responses={200: inline_serializer('SocialLogin', {
-            'token': serializers.CharField(),
-            'username': serializers.CharField(),
-            'email': serializers.EmailField(),
-            'roles': serializers.ListField(child=serializers.CharField()),
-            'created': serializers.BooleanField(),
-        })},
+        responses={
+            200: inline_serializer('SocialLogin', {
+                'token': serializers.CharField(),
+                'username': serializers.CharField(),
+                'email': serializers.EmailField(),
+                'roles': serializers.ListField(child=serializers.CharField()),
+                'created': serializers.BooleanField(),
+            }),
+            409: inline_serializer('SocialLoginConflict', {
+                'detail': serializers.CharField(),
+                'code': serializers.CharField(),
+            }),
+        },
         description="Sign in with Google or LinkedIn. Google sends `credential` "
                     "(an ID token); LinkedIn sends `code` from the redirect. "
-                    "Returns the same token as a normal login.",
+                    "Returns the same token as a normal login. A 409 with "
+                    "`code: email_in_use` means the address is already on an "
+                    "account whose email was never verified - that account has "
+                    "to sign in with its password first.",
     )
     def post(self, request, provider):
         serializer = SocialLoginSerializer(data=request.data)
@@ -123,7 +150,21 @@ class SocialLoginView(APIView):
         except SocialAuthError as exc:
             return Response({"error": str(exc)}, status=400)
 
-        user, created = get_or_create_social_user(provider, profile)
+        try:
+            user, created = get_or_create_social_user(provider, profile)
+        except EmailInUse:
+            # Not an enumeration leak: the provider already vouched that this
+            # caller controls the address, so they are being told about their
+            # own account, not somebody else's.
+            name = PROVIDER_NAMES.get(provider, provider)
+            return Response(
+                {
+                    "detail": f"An account with this email already exists. "
+                              f"Sign in with your password to connect {name}.",
+                    "code": EmailInUse.code,
+                },
+                status=409,
+            )
 
         if not user.is_active:
             return Response({"error": "this account is disabled"}, status=403)

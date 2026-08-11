@@ -1,12 +1,17 @@
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.contrib.auth.models import Group
 from django.test import override_settings
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from .models import SocialAccount
+from cars.models import Car
+from purchases.models import PurchaseRequest
+
+from .models import SocialAccount, get_profile
 from .social import SocialAuthError
 
 User = get_user_model()
@@ -23,6 +28,14 @@ def profile(uid, email="", verified=False, first="", last=""):
         "first_name": first,
         "last_name": last,
     }
+
+
+def verify_account(user):
+    """Mark an account's address as proved, the way a provider would."""
+    user_profile = get_profile(user)
+    user_profile.email_verified = True
+    user_profile.save(update_fields=["email_verified"])
+    return user
 
 
 @override_settings(
@@ -100,6 +113,9 @@ class SocialLoginTests(APITestCase):
         existing = User.objects.create_user(
             "mwangi", email="mwangi@example.com", password="Sh1llings!2026"
         )
+        # The good path needs an account whose address was actually proved -
+        # without this the sign-in is refused, which is the point of the fix.
+        verify_account(existing)
         verify.return_value = profile("g-2", "mwangi@example.com", verified=True)
 
         body = self.client.post(GOOGLE, {"credential": "ok"}, format="json").json()
@@ -108,6 +124,40 @@ class SocialLoginTests(APITestCase):
         self.assertEqual(body["username"], "mwangi")
         self.assertEqual(User.objects.count(), 1)
         self.assertEqual(existing.social_accounts.count(), 1)
+
+    @patch("goldride_app.views.verify_google")
+    def test_an_unverified_registration_cannot_capture_the_owner(self, verify):
+        """The attack: register with a stranger's address and wait for them.
+
+        Nothing proves the address at registration, so if a verified Google
+        sign-in linked to that row the owner would be handed the attacker's
+        account - password and all.
+        """
+        registration = self.client.post(
+            "/api/auth/register/",
+            {
+                "username": "attacker",
+                "email": "victim@example.com",
+                "first_name": "Not",
+                "password": "Sh1llings!2026",
+            },
+            format="json",
+        )
+        self.assertEqual(registration.status_code, 201)
+
+        verify.return_value = profile("g-victim", "victim@example.com", verified=True)
+        response = self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+        body = response.json()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(body["code"], "email_in_use")
+        self.assertNotIn("token", body)
+
+        # nothing was linked, and the squatted row is untouched
+        self.assertEqual(SocialAccount.objects.count(), 0)
+        self.assertEqual(
+            User.objects.get(email="victim@example.com").username, "attacker"
+        )
 
     @patch("goldride_app.views.verify_linkedin")
     def test_unverified_email_cannot_take_over_an_account(self, verify):
@@ -178,6 +228,53 @@ class SocialLoginTests(APITestCase):
         response = self.client.post(GOOGLE, {"credential": "ok"}, format="json")
 
         self.assertEqual(response.status_code, 403)
+
+    @patch("goldride_app.views.verify_google")
+    def test_a_social_created_account_is_marked_verified(self, verify):
+        """The provider proved it, so a later sign-in may link to this row."""
+        verify.return_value = profile("g-6", "amina@example.com", verified=True)
+
+        self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+
+        user = User.objects.get(email="amina@example.com")
+        self.assertTrue(get_profile(user).email_verified)
+
+    @patch("goldride_app.views.verify_linkedin")
+    def test_an_unverified_provider_email_leaves_the_account_unverified(self, verify):
+        verify.return_value = profile("li-7", "claimed@example.com", verified=False)
+
+        body = self.client.post(LINKEDIN, {"code": "abc"}, format="json").json()
+
+        user = User.objects.get(username=body["username"])
+        self.assertFalse(get_profile(user).email_verified)
+
+    @patch("goldride_app.views.verify_google")
+    def test_a_refused_link_stays_refused(self, verify):
+        """Retrying must not be a way through."""
+        User.objects.create_user(
+            "squatter", email="victim@example.com", password="Sh1llings!2026"
+        )
+        verify.return_value = profile("g-8", "victim@example.com", verified=True)
+
+        for _ in range(3):
+            response = self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+            self.assertEqual(response.status_code, 409)
+
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(SocialAccount.objects.count(), 0)
+
+    @patch("goldride_app.views.verify_google")
+    def test_an_already_linked_account_is_unaffected(self, verify):
+        """Verification gates new links only - it must not lock people out."""
+        user = User.objects.create_user("amina", email="amina@example.com")
+        SocialAccount.objects.create(provider="google", uid="g-9", user=user)
+        self.assertFalse(get_profile(user).email_verified)
+        verify.return_value = profile("g-9", "amina@example.com", verified=True)
+
+        response = self.client.post(GOOGLE, {"credential": "ok"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["username"], "amina")
 
     @patch("goldride_app.views.verify_google")
     def test_the_token_actually_works(self, verify):
@@ -357,6 +454,186 @@ class MeTests(APITestCase):
             self.client.patch("/api/me/", {"email": "x@example.com"}, format="json").status_code,
             401,
         )
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.TokenAuthentication",
+        ],
+    }
+)
+class RegistrationTests(APITestCase):
+    URL = "/api/auth/register/"
+
+    def setUp(self):
+        cache.clear()
+
+    def register(self, **overrides):
+        body = {
+            "email": "amina@example.com",
+            "first_name": "Amina",
+            "password": "Sh1llings!2026",
+        }
+        body.update(overrides)
+        return self.client.post(self.URL, body, format="json")
+
+    def test_a_username_is_derived_from_the_email(self):
+        response = self.register()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["username"], "amina")
+        self.assertTrue(User.objects.filter(username="amina").exists())
+
+    def test_a_supplied_username_is_still_used(self):
+        response = self.register(username="amina_o")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["username"], "amina_o")
+
+    def test_a_derived_username_collision_gets_a_suffix(self):
+        User.objects.create_user("amina", email="someone.else@example.com")
+
+        response = self.register()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["username"].startswith("amina-"))
+
+    def test_a_taken_username_is_still_rejected(self):
+        User.objects.create_user("amina", email="someone.else@example.com")
+
+        response = self.register(username="amina")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("username", response.json())
+
+    def test_the_new_account_is_not_email_verified(self):
+        """Nothing here proves the address, so nothing may link to it."""
+        self.register()
+
+        user = User.objects.get(email="amina@example.com")
+        self.assertFalse(get_profile(user).email_verified)
+
+    def test_the_token_it_returns_works(self):
+        token = self.register().json()["token"]
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        me = self.client.get("/api/me/").json()
+
+        self.assertEqual(me["username"], "amina")
+        self.assertEqual(me["roles"], ["Customer"])
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.TokenAuthentication",
+        ],
+    }
+)
+class LogoutTests(APITestCase):
+    URL = "/api/auth/logout/"
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            "mwangi", email="mwangi@example.com", password="Sh1llings!2026"
+        )
+        self.token, _ = Token.objects.get_or_create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def test_the_token_stops_working(self):
+        self.assertEqual(self.client.get("/api/me/").status_code, 200)
+
+        response = self.client.post(self.URL)
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(self.client.get("/api/me/").status_code, 401)
+        self.assertFalse(Token.objects.filter(user=self.user).exists())
+
+    def test_signing_in_again_issues_a_fresh_token(self):
+        self.client.post(self.URL)
+        self.client.credentials()
+
+        response = self.client.post(
+            "/api/auth/login/email/",
+            {"email": "mwangi@example.com", "password": "Sh1llings!2026"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()["token"], self.token.key)
+
+    def test_anonymous_cannot_call_it(self):
+        self.client.credentials()
+        self.assertEqual(self.client.post(self.URL).status_code, 401)
+
+    def test_one_logout_does_not_touch_anybody_else(self):
+        other = User.objects.create_user("amina", email="amina@example.com")
+        other_token, _ = Token.objects.get_or_create(user=other)
+
+        self.client.post(self.URL)
+
+        self.assertTrue(Token.objects.filter(key=other_token.key).exists())
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.TokenAuthentication",
+        ],
+    }
+)
+class PurchaseRequestEmailTests(APITestCase):
+    """A social sign-in with no verified address cannot be sent a checkout link."""
+
+    URL = "/api/purchases/"
+
+    def setUp(self):
+        cache.clear()
+        self.car = Car.objects.create(
+            make="Toyota",
+            model="Land Cruiser",
+            year=2021,
+            price=Decimal("8500000.00"),
+            description="V8, imported.",
+        )
+        self.customers = Group.objects.get_or_create(name="Customer")[0]
+
+    def sign_in(self, user):
+        self.customers.user_set.add(user)
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def buy(self):
+        return self.client.post(
+            self.URL, {"car": self.car.pk, "phone": "0712345678"}, format="json"
+        )
+
+    def test_an_account_without_an_email_is_refused(self):
+        self.sign_in(User.objects.create_user("user1a2b", email=""))
+
+        response = self.buy()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "email_required")
+        self.assertEqual(PurchaseRequest.objects.count(), 0)
+
+    def test_adding_an_email_unblocks_it(self):
+        user = User.objects.create_user("user1a2b", email="")
+        self.sign_in(user)
+        self.assertEqual(self.buy().status_code, 400)
+
+        self.client.patch("/api/me/", {"email": "amina@example.com"}, format="json")
+
+        self.assertEqual(self.buy().status_code, 201)
+        self.assertEqual(PurchaseRequest.objects.count(), 1)
+
+    def test_listing_your_own_requests_still_works_without_one(self):
+        """Only the write is blocked - do not lock them out of their history."""
+        self.sign_in(User.objects.create_user("user1a2b", email=""))
+
+        self.assertEqual(self.client.get(self.URL).status_code, 200)
 
 
 class SocialAccountModelTests(APITestCase):

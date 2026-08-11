@@ -1,7 +1,13 @@
+import secrets
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.validators import UnicodeUsernameValidator
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
+
+from .social import SocialAuthError, _username_base, create_user_unique
 
 User = get_user_model()
 
@@ -45,6 +51,22 @@ class SocialLoginSerializer(serializers.Serializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
+    # Optional: most people sign up with an email and never want a handle.
+    # Declaring it by hand loses the validators ModelSerializer would have
+    # built, so they are put back explicitly.
+    username = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        validators=[
+            UnicodeUsernameValidator(),
+            UniqueValidator(
+                queryset=User.objects.all(),
+                message="A user with that username already exists.",
+            ),
+        ],
+        help_text="Optional. Derived from the email address when left out.",
+    )
 
     class Meta:
         model = User
@@ -62,7 +84,29 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
+        username = (validated_data.pop("username", "") or "").strip()
+        password = validated_data.pop("password")
+
+        if username:
+            user = User.objects.create_user(
+                username=username, password=password, **validated_data
+            )
+        else:
+            try:
+                user = create_user_unique(
+                    # secrets, not the pk: the fallback only matters for an
+                    # address whose local part is entirely punctuation.
+                    base=_username_base(validated_data.get("email", ""), secrets.token_hex(4)),
+                    password=password,
+                    **validated_data,
+                )
+            except SocialAuthError:
+                raise serializers.ValidationError(
+                    {"username": "Could not derive a username, please choose one."}
+                )
+
+        # email_verified stays False - nothing here proved the address is
+        # theirs, and a social sign-in must not link to it until it does.
         group, _ = Group.objects.get_or_create(name="Customer")
         user.groups.add(group)
         return user
