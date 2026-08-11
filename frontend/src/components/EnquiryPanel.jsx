@@ -4,6 +4,7 @@ import api from '../api/client'
 import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
+import PurchaseModal from './PurchaseModal'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -11,6 +12,8 @@ const fieldClass =
 function EnquiryPanel({ car, title }) {
   const { user } = useAuth()
   const [authOpen, setAuthOpen] = useState(false)
+  const [buyOpen, setBuyOpen] = useState(false)
+  const sold = car.availability === 'sold'
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [message, setMessage] = useState(`Please contact me regarding ${title}`)
@@ -41,6 +44,22 @@ function EnquiryPanel({ car, title }) {
       <p className="mt-1 text-meta text-ink-soft">
         {car.location || 'Nairobi, Kenya'}
       </p>
+
+      {/* The primary action. Sold cars get no button - the API refuses them
+          anyway, and offering it would be a promise the server breaks. */}
+      <div className="mt-6 border-t border-line pt-6">
+        {sold ? (
+          <p className="text-meta text-ink-soft">This car has been sold.</p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => (user ? setBuyOpen(true) : setAuthOpen(true))}
+            className="h-12 w-full bg-ink text-badge uppercase text-surface"
+          >
+            Request to buy
+          </button>
+        )}
+      </div>
 
       {enquiry.isSuccess ? (
         <p className="mt-6 border-t border-line pt-6 text-model">
@@ -88,10 +107,11 @@ function EnquiryPanel({ car, title }) {
             </ul>
           )}
 
+          {/* Secondary: "Request to buy" above it is the primary action. */}
           <button
             type="submit"
             disabled={enquiry.isPending}
-            className="h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
+            className="h-12 w-full border border-ink text-badge uppercase disabled:opacity-50"
           >
             {enquiry.isPending ? 'Sending…' : 'Send message'}
           </button>
@@ -99,12 +119,12 @@ function EnquiryPanel({ car, title }) {
       ) : (
         <div className="mt-6 border-t border-line pt-6">
           <p className="text-model text-ink-soft">
-            Sign in to send an enquiry about this car.
+            Or ask us a question about this car.
           </p>
           <button
             type="button"
             onClick={() => setAuthOpen(true)}
-            className="mt-4 h-12 w-full bg-ink text-badge uppercase text-surface"
+            className="mt-4 h-12 w-full border border-ink text-badge uppercase"
           >
             Sign in to enquire
           </button>
@@ -112,6 +132,10 @@ function EnquiryPanel({ car, title }) {
       )}
 
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
+
+      {buyOpen && (
+        <PurchaseModal car={car} title={title} onClose={() => setBuyOpen(false)} />
+      )}
     </aside>
   )
 }
