@@ -21,7 +21,7 @@ function Hero({ count }) {
   const showVideo = Boolean(banner.video) && isDesktop && !reducedMotion
 
   return (
-    <section className="relative h-[380px] w-full overflow-hidden bg-ink lg:h-[560px]">
+    <section className="relative h-svh w-full overflow-hidden bg-ink">
       {showVideo ? (
         <video
           src={banner.video}
