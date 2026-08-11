@@ -5,6 +5,8 @@ import api from '../api/client'
 import { formatPrice } from '../lib/format'
 import Gallery from '../components/Gallery'
 import EnquiryPanel from '../components/EnquiryPanel'
+import ErrorState from '../components/ErrorState'
+import Page from '../components/Page'
 
 const numberFormat = new Intl.NumberFormat('en-KE')
 
@@ -12,7 +14,7 @@ function CarDetail() {
   const { id } = useParams()
   const [expanded, setExpanded] = useState(false)
 
-  const { data: car, isPending, isError } = useQuery({
+  const { data: car, isPending, isError, error, refetch } = useQuery({
     queryKey: ['car', id],
     queryFn: async () => {
       const res = await api.get(`/api/cars/${id}/`)
@@ -20,8 +22,33 @@ function CarDetail() {
     },
   })
 
-  if (isPending) return <p className="p-12">Loading…</p>
-  if (isError) return <p className="p-12">Car not found.</p>
+  if (isPending) {
+    return (
+      <Page>
+        <div className="h-[320px] w-full animate-pulse bg-line lg:h-[520px]" />
+        <div className="mt-8 h-12 w-96 animate-pulse bg-line" />
+        <div className="mt-12 h-64 w-full max-w-[560px] animate-pulse bg-line" />
+      </Page>
+    )
+  }
+
+  if (isError) {
+    // A missing car stays missing, so no retry button on a 404.
+    const missing = error?.response?.status === 404
+    return (
+      <Page>
+        <ErrorState
+          title={missing ? 'Car not found' : 'Something went wrong'}
+          message={
+            missing
+              ? 'This listing may have been sold or removed.'
+              : 'We could not load this listing.'
+          }
+          onRetry={missing ? undefined : refetch}
+        />
+      </Page>
+    )
+  }
 
   const photos = [car.image, ...car.images.map((item) => item.image)].filter(Boolean)
   const title = `${car.year} ${car.make} ${car.model}`
