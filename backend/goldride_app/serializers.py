@@ -7,7 +7,9 @@ from django.contrib.auth.validators import UnicodeUsernameValidator
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
+from .models import get_profile
 from .social import SocialAuthError, _username_base, create_user_unique
+from .verification import send_verification_email
 
 User = get_user_model()
 
@@ -22,6 +24,25 @@ class MeUpdateSerializer(serializers.ModelSerializer):
         model = User
         fields = ["email", "first_name", "last_name"]
         extra_kwargs = {"email": {"required": False}}
+
+    def update(self, instance, validated_data):
+        moved = (
+            "email" in validated_data
+            and (validated_data["email"] or "").lower() != (instance.email or "").lower()
+        )
+        user = super().update(instance, validated_data)
+
+        if moved:
+            # Load-bearing: a verified account that changes its address would
+            # otherwise stay verified on an address nobody proved - which is
+            # the linking hole again, through a different door.
+            profile = get_profile(user)
+            if profile.email_verified:
+                profile.email_verified = False
+                profile.save(update_fields=["email_verified"])
+            send_verification_email(user)
+
+        return user
 
     def validate_email(self, value):
         value = (value or "").strip()
