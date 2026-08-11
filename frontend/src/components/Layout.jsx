@@ -70,6 +70,17 @@ function Layout() {
             />
           </form>
 
+          {user && (
+            <Link
+              to="/my/orders"
+              className={`hidden shrink-0 text-meta underline lg:block ${
+                overlay ? 'text-surface' : 'text-ink'
+              }`}
+            >
+              My orders
+            </Link>
+          )}
+
           {user ? (
             <button
               type="button"
