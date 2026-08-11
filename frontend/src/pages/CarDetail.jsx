@@ -1,12 +1,16 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
 import { formatPrice } from '../lib/format'
+import Gallery from '../components/Gallery'
+import EnquiryPanel from '../components/EnquiryPanel'
+
+const numberFormat = new Intl.NumberFormat('en-KE')
 
 function CarDetail() {
   const { id } = useParams()
-  const [activeIndex, setActiveIndex] = useState(0)
+  const [expanded, setExpanded] = useState(false)
 
   const { data: car, isPending, isError } = useQuery({
     queryKey: ['car', id],
@@ -21,71 +25,109 @@ function CarDetail() {
 
   const photos = [car.image, ...car.images.map((item) => item.image)].filter(Boolean)
   const title = `${car.year} ${car.make} ${car.model}`
+  const km = (value) => `${numberFormat.format(value)} km`
+  const cc = (value) => `${numberFormat.format(value)} cc`
+
+  // Anything unknown is dropped rather than shown blank.
+  const stats = [
+    { label: 'Year', value: car.year },
+    { label: 'Mileage', value: car.mileage_km && km(car.mileage_km) },
+    { label: 'Engine', value: car.engine_cc && cc(car.engine_cc) },
+    { label: 'Fuel type', value: car.fuel_type_label },
+    { label: 'Transmission', value: car.transmission_label },
+  ].filter((stat) => stat.value)
+
+  const details = [
+    { label: 'Location', value: car.location },
+    { label: 'Mileage', value: car.mileage_km && km(car.mileage_km) },
+    { label: 'Engine', value: car.engine_cc && cc(car.engine_cc) },
+    { label: 'Car type', value: car.body_type_label },
+    { label: 'Drive train', value: car.drivetrain_label },
+    { label: 'Transmission', value: car.transmission_label },
+    { label: 'Fuel type', value: car.fuel_type_label },
+    { label: 'Condition', value: car.condition },
+    { label: 'Colour', value: car.exterior_colour },
+    { label: 'Interior colour', value: car.interior_colour },
+    { label: 'VIN', value: car.vin },
+    { label: 'Reference', value: car.reference },
+  ].filter((row) => row.value)
+
+  const isLong = car.description.length > 320
+  const shown = isLong && !expanded ? `${car.description.slice(0, 320)}…` : car.description
 
   return (
-    <div className="mx-auto max-w-[1440px] px-5 py-16 lg:px-12">
-      <div className="grid gap-12 lg:grid-cols-[3fr_2fr]">
-        <div>
-          <div className="aspect-[4/3] overflow-hidden border border-line bg-surface">
-            {photos.length > 0 && (
-              <img
-                src={photos[activeIndex]}
-                alt={title}
-                className="h-full w-full object-cover"
-              />
-            )}
-          </div>
+    <div className="mx-auto max-w-[1440px] px-5 py-8 lg:px-12 lg:py-12">
+      <nav className="mb-6 flex items-center gap-2 text-meta text-ink-soft">
+        <Link to="/" className="hover:text-ink">
+          Cars
+        </Link>
+        <span aria-hidden="true">/</span>
+        <Link to={`/?make=${encodeURIComponent(car.make)}`} className="hover:text-ink">
+          {car.make}
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span className="text-ink">{car.model}</span>
+      </nav>
 
-          {photos.length > 1 && (
-            <div className="mt-3 flex flex-wrap gap-3">
-              {photos.map((src, index) => (
-                <button
-                  key={src}
-                  type="button"
-                  onClick={() => setActiveIndex(index)}
-                  className={`h-24 w-24 overflow-hidden border ${
-                    index === activeIndex ? 'border-ink' : 'border-line'
-                  }`}
-                >
-                  <img src={src} alt="" className="h-full w-full object-cover" />
-                </button>
+      <Gallery photos={photos} title={title} />
+
+      <div className="mt-8 flex flex-wrap items-end justify-between gap-x-16 gap-y-4 border-b border-line pb-8">
+        <div className="max-w-[640px]">
+          <span className="text-badge uppercase text-ink-soft">{car.availability}</span>
+          <h1 className="mt-2 font-serif text-h1">{title}</h1>
+        </div>
+        <p className="font-serif text-h1">{formatPrice(car.price)}</p>
+      </div>
+
+      <div className="mt-12 grid gap-16 lg:grid-cols-[1fr_380px]">
+        <div>
+          {/* One lonely figure reads as broken, so the strip needs at least two. */}
+          {stats.length > 1 && (
+            <dl className="flex flex-wrap gap-x-16 gap-y-8 border-b border-line pb-8">
+              {stats.map((stat) => (
+                <div key={stat.label}>
+                  <dd className="text-price">{stat.value}</dd>
+                  <dt className="mt-1 text-meta text-ink-soft">{stat.label}</dt>
+                </div>
               ))}
-            </div>
+            </dl>
+          )}
+
+          <section className="mt-12">
+            <h2 className="font-serif text-section">About This Car</h2>
+            <p className="mt-4 max-w-[68ch] whitespace-pre-line text-model leading-relaxed text-ink-soft">
+              {shown}
+            </p>
+            {isLong && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="mt-3 text-model text-ink underline"
+              >
+                {expanded ? 'view less' : 'view more'}
+              </button>
+            )}
+          </section>
+
+          {details.length > 0 && (
+            <section className="mt-12">
+              <h2 className="font-serif text-section">Car Details</h2>
+              <dl className="mt-4 max-w-[560px]">
+                {details.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex justify-between gap-8 border-b border-line py-3 text-meta"
+                  >
+                    <dt className="text-ink-soft">{row.label}</dt>
+                    <dd className="text-right capitalize">{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           )}
         </div>
 
-        <div>
-          <span className="inline-block rounded-full border border-line px-3 py-1 text-badge uppercase">
-            {car.availability}
-          </span>
-
-          <h1 className="mt-4 font-serif text-h1">{title}</h1>
-          <p className="mt-4 text-price font-semibold">{formatPrice(car.price)}</p>
-
-          <dl className="mt-8 border-t border-line text-meta">
-            <div className="flex justify-between border-b border-line py-3">
-              <dt className="text-ink-soft">Condition</dt>
-              <dd className="uppercase">{car.condition}</dd>
-            </div>
-            <div className="flex justify-between border-b border-line py-3">
-              <dt className="text-ink-soft">Year</dt>
-              <dd>{car.year}</dd>
-            </div>
-            <div className="flex justify-between border-b border-line py-3">
-              <dt className="text-ink-soft">Make</dt>
-              <dd>{car.make}</dd>
-            </div>
-          </dl>
-
-          <p className="mt-8 text-model text-ink-soft">{car.description}</p>
-
-          <button
-            type="button"
-            className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface"
-          >
-            Enquire about this car
-          </button>
-        </div>
+        <EnquiryPanel car={car} title={title} />
       </div>
     </div>
   )
