@@ -33,7 +33,10 @@ function EnquiryPanel({ car, title }) {
   }
 
   return (
-    <aside className="h-fit border border-line bg-surface p-6 lg:sticky lg:top-32">
+    <aside
+      id="enquire"
+      className="h-fit scroll-mt-[160px] border border-line bg-surface p-6 lg:sticky lg:top-32"
+    >
       <p className="font-serif text-section">Goldride Motors</p>
       <p className="mt-1 text-meta text-ink-soft">
         {car.location || 'Nairobi, Kenya'}
