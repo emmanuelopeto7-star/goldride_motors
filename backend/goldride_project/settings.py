@@ -141,6 +141,7 @@ REST_FRAMEWORK = {
         "register": "10/hour",
         "social": "30/hour",
         "login": "10/hour",
+        "verify": "20/hour",
     },
         "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
@@ -170,6 +171,24 @@ SPECTACULAR_SETTINGS = {
 }
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 DEFAULT_FROM_EMAIL = 'noreply@goldridemotors.co.ke'
+
+# Where the confirmation link points (this API), and where it sends the
+# browser afterwards (the React app).
+SITE_URL = config('SITE_URL', default='http://127.0.0.1:8000')
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
+# Three days. Long enough for an email left until the weekend, short enough
+# that a forwarded link stops working.
+EMAIL_VERIFICATION_TIMEOUT = config(
+    'EMAIL_VERIFICATION_TIMEOUT', default=60 * 60 * 24 * 3, cast=int
+)
+
+# Tests only. PBKDF2 is deliberately slow, and the suite creates hundreds of
+# users - that cost was most of a three minute run. This hasher is weak on
+# purpose and never touches a real password: the branch cannot be reached
+# outside `manage.py test`.
+if 'test' in sys.argv:
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
 
 
 # Internationalization
