@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, permissions, serializers
 from rest_framework.authtoken.models import Token
@@ -5,8 +7,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
+from django.shortcuts import redirect
 
+from .models import get_profile
 from .serializers import (
     EmailLoginSerializer,
     MeUpdateSerializer,
@@ -20,6 +25,7 @@ from .social import (
     verify_google,
     verify_linkedin,
 )
+from .verification import VerificationError, confirm, send_verification_email
 
 User = get_user_model()
 
@@ -36,6 +42,10 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # They can use the site straight away; the link only decides whether
+        # a social sign-in may ever attach itself to this account.
+        send_verification_email(user)
 
         token, _ = Token.objects.get_or_create(user=user)
 
@@ -82,6 +92,53 @@ class EmailLoginView(APIView):
 
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
+
+
+class VerifyEmailView(APIView):
+    """The link in the email. Opened by a browser, not by the app."""
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "verify"
+
+    @extend_schema(
+        request=None,
+        responses={302: None},
+        description="Confirm an email address from the link that was mailed "
+                    "to it, then bounce the browser back to the site with "
+                    "`?verified=1` or `?verified=0&reason=...`.",
+    )
+    def get(self, request, token):
+        target = settings.FRONTEND_URL.rstrip("/")
+        try:
+            confirm(token)
+        except VerificationError as exc:
+            return redirect(f"{target}/?verified=0&reason={quote(str(exc))}")
+
+        return redirect(f"{target}/?verified=1")
+
+
+class ResendVerificationView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "verify"
+
+    @extend_schema(
+        request=None,
+        responses={200: inline_serializer('ResendVerification', {
+            'detail': serializers.CharField(),
+        })},
+        description="Send the confirmation email again. Answers the same way "
+                    "whether or not anything was sent.",
+    )
+    def post(self, request):
+        if get_profile(request.user).email_verified:
+            return Response({"detail": "That address is already confirmed."})
+
+        send_verification_email(request.user)
+        # Deliberately vague: an account with no address gets the same reply,
+        # and nothing here should be a way to probe account state.
+        return Response({"detail": "Check your email for the link."})
 
 
 class LogoutView(APIView):
@@ -190,6 +247,10 @@ class MeView(APIView):
             'is_staff': serializers.BooleanField(),
             'is_superuser': serializers.BooleanField(),
             'roles': serializers.ListField(child=serializers.CharField()),
+            'needs_email': serializers.BooleanField(),
+            'email_verified': serializers.BooleanField(),
+            'has_password': serializers.BooleanField(),
+            'providers': serializers.ListField(child=serializers.CharField()),
         })},
         description="The signed-in user and their roles. Use this to decide what the UI shows.",
     )
@@ -219,6 +280,7 @@ class MeView(APIView):
             "roles": list(user.groups.values_list("name", flat=True)),
             # The frontend uses this to prompt before letting them transact.
             "needs_email": not user.email,
+            "email_verified": get_profile(user).email_verified,
             "has_password": user.has_usable_password(),
             "providers": list(
                 user.social_accounts.values_list("provider", flat=True)
