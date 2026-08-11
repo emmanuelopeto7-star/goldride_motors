@@ -1,10 +1,26 @@
 import { useState } from 'react'
 import { Link, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
+import api from '../api/client'
+import { getToken, clearToken } from '../lib/auth'
+import AuthModal from './AuthModal'
+
 
 function Layout() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [term, setTerm] = useState(searchParams.get('search') ?? '')
+  const [authOpen, setAuthOpen] = useState(false)
+  const [signedIn, setSignedIn] = useState(Boolean(getToken()))
+
+  async function handleSignOut() {
+    try {
+      await api.post('/api/auth/logout/')
+    } catch {
+      // The token may already be dead server-side; clear it locally regardless.
+    }
+    clearToken()
+    setSignedIn(false)
+  }
 
   function handleSubmit(event) {
     event.preventDefault()
@@ -37,18 +53,35 @@ function Layout() {
           </form>
 
 
-          <Link
-            to="/login"
-            className="flex h-10 shrink-0 items-center rounded-full border border-line px-5 text-meta"
-          >
-            Sign in
-          </Link>
+                   {signedIn ? (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex h-10 shrink-0 items-center rounded-full border border-line px-5 text-meta"
+            >
+              Sign out
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAuthOpen(true)}
+              className="flex h-10 shrink-0 items-center rounded-full border border-line px-5 text-meta"
+            >
+              Sign in
+            </button>
+          )}
         </div>
       </header>
 
       <main>
         <Outlet />
       </main>
+            {authOpen && (
+        <AuthModal
+          onClose={() => setAuthOpen(false)}
+          onSignedIn={() => setSignedIn(true)}
+        />
+      )}
     </div>
   )
 }
