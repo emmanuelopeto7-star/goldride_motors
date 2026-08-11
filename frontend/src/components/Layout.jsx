@@ -9,6 +9,7 @@ import {
 import api from '../api/client'
 import { getToken, clearToken } from '../lib/auth'
 import { useScrolled } from '../hooks/useScrolled'
+import { useHeroBanner } from '../hooks/useHeroBanner'
 import AuthModal from './AuthModal'
 import BrandStrip from './BrandStrip'
 
@@ -24,8 +25,11 @@ function Layout() {
   const [signedIn, setSignedIn] = useState(Boolean(getToken()))
 
   const scrolled = useScrolled(80)
-  // Only the home page has a hero, so only it can be overlaid (§4.6).
-  const hasHero = location.pathname === '/'
+  // Shares a cache entry with Hero, so this costs no extra request. Keyed on
+  // whether a hero will actually draw, not merely on the route - otherwise a
+  // home page with no banner leaves white header text on a white background.
+  const { data: banner, isPending: bannerPending } = useHeroBanner()
+  const hasHero = location.pathname === '/' && (bannerPending || Boolean(banner))
   const overlay = hasHero && !scrolled
 
   async function handleSignOut() {

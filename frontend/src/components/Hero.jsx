@@ -1,23 +1,19 @@
-import { useQuery } from '@tanstack/react-query'
-import api from '../api/client'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useHeroBanner } from '../hooks/useHeroBanner'
 
 function Hero({ count }) {
-  // Hooks first, always - an early return below must not change how many run.
+  // Hooks first, always - the early returns below must not change how many run.
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 
-  const { data: banner } = useQuery({
-    queryKey: ['hero'],
-    queryFn: async () => {
-      const res = await api.get('/api/hero/')
-      // No active banner comes back as an empty body, not as null.
-      return res.data || null
-    },
-  })
+  const { data: banner, isPending } = useHeroBanner()
 
+  // Hold the dark band while the banner is in flight. Returning null would
+  // strand the transparent header on a white page, white-on-white.
+  if (isPending) return <div className="h-svh w-full bg-ink" />
   if (!banner) return null
 
+  // §5b.5 and §5b.6: mobile and reduced-motion never load the video at all.
   const showVideo = Boolean(banner.video) && isDesktop && !reducedMotion
 
   return (
@@ -41,8 +37,6 @@ function Hero({ count }) {
         />
       )}
 
-      {/* The one place a gradient is allowed: it earns white text over an
-          arbitrary photograph, and it carries the header in overlay mode. */}
       <div
         className="absolute inset-0"
         style={{
