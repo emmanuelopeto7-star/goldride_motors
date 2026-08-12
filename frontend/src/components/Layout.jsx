@@ -47,7 +47,10 @@ function Layout() {
           overlay ? 'text-surface' : 'border-b border-line bg-surface text-ink'
         }`}
       >
-        <div className="mx-auto flex h-[72px] max-w-[1440px] items-center gap-6 px-5 lg:px-12">
+        {/* Full width, not the §3.4 container: the nav reads as chrome and
+            belongs against the screen edges, while page content stays in the
+            1440px column below it. */}
+        <div className="flex h-[72px] w-full items-center gap-6 px-5 lg:px-12">
           <button
             type="button"
             aria-label="Open menu"
@@ -78,6 +81,10 @@ function Layout() {
             />
           </form>
 
+          {/* ml-auto, not flex-1 on the form: the search is capped at 620px,
+              so it cannot absorb the slack on a wide screen and the right-hand
+              items would sit stranded in the middle. */}
+          <div className="ml-auto flex shrink-0 items-center gap-6">
           {user && (
             <Link
               to="/my/orders"
@@ -106,6 +113,7 @@ function Layout() {
               Sign in
             </button>
           )}
+          </div>
         </div>
 
         <BrandStrip overlay={overlay} />

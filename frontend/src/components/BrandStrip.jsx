@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import api from '../api/client'
@@ -6,6 +7,27 @@ import api from '../api/client'
 function BrandStrip({ overlay }) {
   const [searchParams] = useSearchParams()
   const activeMake = searchParams.get('make') ?? ''
+  const track = useRef(null)
+
+  // A vertical wheel does nothing over a horizontal scroller, and the bar is
+  // hidden, so a mouse user has no way to reach makes past the edge. Bound as
+  // a native listener because it must be non-passive to preventDefault.
+  useEffect(() => {
+    const el = track.current
+    if (!el) return
+
+    function onWheel(event) {
+      if (el.scrollWidth <= el.clientWidth) return
+      // Leave genuine horizontal gestures - trackpads - alone.
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+
+      event.preventDefault()
+      el.scrollLeft += event.deltaY
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
 
   const { data: makes } = useQuery({
     queryKey: ['makes'],
@@ -19,8 +41,10 @@ function BrandStrip({ overlay }) {
 
   return (
     <div className={overlay ? '' : 'border-t border-line'}>
-      <div className="mx-auto max-w-[1440px] px-5 lg:px-12">
+      {/* Matches row 1: full width so the strip lines up with the nav above. */}
+      <div className="w-full px-5 lg:px-12">
         <nav
+          ref={track}
           className="flex h-12 items-center gap-6 overflow-x-auto whitespace-nowrap"
           style={{
             // Fading edges, so a scrolled-off make bleeds out rather than
