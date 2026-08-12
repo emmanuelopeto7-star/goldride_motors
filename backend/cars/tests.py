@@ -78,6 +78,47 @@ class CarMakesTests(APITestCase):
         self.assertEqual(self.client.get(self.url).status_code, 200)
 
 
+class CarModelsTests(APITestCase):
+    url = "/api/cars/models/"
+
+    def test_groups_by_make_and_model_with_counts(self):
+        make_car(make="Toyota", model="Prado")
+        make_car(make="Toyota", model="Prado")
+        make_car(make="Toyota", model="Hilux")
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [(row["make"], row["model"], row["count"]) for row in response.data],
+            [("Toyota", "Prado", 2), ("Toyota", "Hilux", 1)],
+        )
+
+    def test_is_not_paginated(self):
+        for index in range(15):
+            make_car(model=f"Model{index:02d}")
+
+        response = self.client.get(self.url)
+
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 15)
+
+    def test_image_is_null_when_no_car_of_that_model_has_one(self):
+        make_car(make="Mazda", model="Demio")
+
+        response = self.client.get(self.url)
+
+        self.assertIsNone(response.data[0]["image"])
+
+    def test_is_public(self):
+        make_car()
+
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_models_is_not_read_as_a_car_id(self):
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+
 class FavouriteTests(APITestCase):
     url = "/api/favourites/"
 
