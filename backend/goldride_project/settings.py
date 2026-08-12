@@ -39,6 +39,25 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 allowed_hosts_str = config('ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(',') if host.strip()]
 
+# Render injects the service's public hostname. Reading it means the app works
+# on whatever URL Render hands out without that URL being hardcoded here.
+RENDER_HOST = config('RENDER_EXTERNAL_HOSTNAME', default='')
+if RENDER_HOST and RENDER_HOST not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_HOST)
+
+# Django 4+ rejects cross-origin POSTs - including the admin login - unless the
+# origin is listed here, scheme included.
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{host}"
+    for host in ALLOWED_HOSTS
+    if host not in ("localhost", "127.0.0.1", "*") and not host.startswith(".")
+]
+
+# Render terminates TLS at its proxy and forwards plain HTTP, so without this
+# Django believes every request is insecure: request.is_secure() returns False,
+# secure cookies are never set, and SSL redirects loop.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 
 # Application definition
 
