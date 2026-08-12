@@ -8,6 +8,8 @@ import EmptyState from '../components/EmptyState'
 import ErrorState from '../components/ErrorState'
 import FilterBar from '../components/FilterBar'
 import Hero from '../components/Hero'
+import MakeGrid from '../components/MakeGrid'
+import ModelCarousel from '../components/ModelCarousel'
 import Page from '../components/Page'
 import Pagination from '../components/Pagination'
 
@@ -149,6 +151,10 @@ function Home() {
             </>
           )}
         </div>
+
+        {/* Browse aids, not listings - they stay put while the grid filters. */}
+        <MakeGrid />
+        <ModelCarousel />
       </Page>
     </>
   )
