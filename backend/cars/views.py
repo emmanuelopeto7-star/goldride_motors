@@ -1,4 +1,4 @@
-from django.db.models import Count
+from django.db.models import Count, Max
 from django.shortcuts import get_object_or_404
 from rest_framework import generics,filters,permissions,status
 from rest_framework.response import Response
@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from .models import Car, Favourite, HeroBanner
 from .serializers import (
     CarMakeSerializer,
+    CarModelSerializer,
     CarSerializer,
     FavouriteSerializer,
     HeroBannerSerializer,
@@ -43,6 +44,23 @@ class CarMakesView(generics.ListAPIView):
             Car.objects.values("make")
             .annotate(count=Count("id"))
             .order_by("-count", "make")
+        )
+
+
+class CarModelsView(generics.ListAPIView):
+    """Every make/model pairing with a count and one photograph, for the
+    model carousel. Unpaginated - it is a browse aid, not a listing."""
+
+    serializer_class = CarModelSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return (
+            Car.objects.values("make", "model")
+            # Max over the upload path picks a non-empty one when any car of
+            # this model has a photo; "" sorts below every real path.
+            .annotate(count=Count("id"), image=Max("image"))
+            .order_by("-count", "make", "model")
         )
 
 

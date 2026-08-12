@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import Car, CarImage, Favourite, HeroBanner
@@ -8,6 +9,24 @@ class CarMakeSerializer(serializers.Serializer):
 
     make = serializers.CharField()
     count = serializers.IntegerField()
+
+
+class CarModelSerializer(serializers.Serializer):
+    """Rows come from values()/annotate(), so image is a raw upload path rather
+    than a FileField and has to be turned into a URL by hand."""
+
+    make = serializers.CharField()
+    model = serializers.CharField()
+    count = serializers.IntegerField()
+    image = serializers.SerializerMethodField()
+
+    def get_image(self, row):
+        path = row.get("image")
+        if not path:
+            return None
+        request = self.context.get("request")
+        url = f"{settings.MEDIA_URL}{path}"
+        return request.build_absolute_uri(url) if request else url
 
 
 class FavouriteSerializer(serializers.ModelSerializer):
