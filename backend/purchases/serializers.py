@@ -47,13 +47,22 @@ class StaffPurchaseRequestSerializer(PurchaseRequestSerializer):
     reviewed_by_username = serializers.CharField(
         source="reviewed_by.username", read_only=True, default=None
     )
+    car_title = serializers.SerializerMethodField()
 
     class Meta(PurchaseRequestSerializer.Meta):
         fields = PurchaseRequestSerializer.Meta.fields + [
+            "car_title",
             "customer_username",
             "customer_email",
             "reviewed_by_username",
         ]
+
+    def get_car_title(self, purchase_request):
+        """`car_display` is Car.__str__, which trails the entire description
+        and prices in dollars. Unusable as a heading, so the queue gets the
+        same "2019 Toyota Prado" form the storefront uses."""
+        car = purchase_request.car
+        return f"{car.year} {car.make} {car.model}"
 
 
 class DecisionSerializer(serializers.Serializer):
