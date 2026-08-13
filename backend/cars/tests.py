@@ -2,6 +2,7 @@ import tempfile
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import IntegrityError
 from django.test import override_settings
@@ -540,3 +541,107 @@ class ListingExpiryTests(APITestCase):
 
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["id"], lapsed.pk)
+
+
+class VideoWalkthroughTests(APITestCase):
+    """Doc gap 3.1 (MEDIUM): listings supported images only."""
+
+    def staff_client(self):
+        User = get_user_model()
+        user = User.objects.create_user("sales3", "sales3@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_a_watch_link_becomes_an_embed_link(self):
+        car = make_car()
+        car.video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        car.save()
+
+        self.assertEqual(
+            car.video_embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ"
+        )
+
+    def test_tracking_parameters_are_discarded(self):
+        """Share buttons attach them; an embed URL must not carry them through."""
+        car = make_car()
+        car.video_url = "https://youtu.be/dQw4w9WgXcQ?t=42&si=abc123"
+
+        self.assertEqual(
+            car.video_embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ"
+        )
+
+    def test_shorts_and_mobile_links_are_understood(self):
+        car = make_car()
+
+        for url in (
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+            "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        ):
+            car.video_url = url
+            self.assertEqual(
+                car.video_embed_url,
+                "https://www.youtube.com/embed/dQw4w9WgXcQ",
+                msg=url,
+            )
+
+    def test_vimeo_links_are_understood(self):
+        car = make_car()
+        car.video_url = "https://vimeo.com/123456789"
+
+        self.assertEqual(
+            car.video_embed_url, "https://player.vimeo.com/video/123456789"
+        )
+
+    def test_no_video_means_no_embed(self):
+        car = make_car()
+
+        self.assertEqual(car.video_url, "")
+        self.assertEqual(car.video_embed_url, "")
+
+    def test_a_link_to_anywhere_else_is_refused(self):
+        """An arbitrary URL in an iframe on a signed-in page is not a feature."""
+        car = make_car()
+        car.video_url = "https://example.com/definitely-a-car.mp4"
+
+        with self.assertRaises(DjangoValidationError):
+            car.full_clean()
+
+    def test_a_malformed_youtube_link_is_refused(self):
+        car = make_car()
+        car.video_url = "https://www.youtube.com/watch?v=tooshort"
+
+        with self.assertRaises(DjangoValidationError):
+            car.full_clean()
+
+    def test_the_detail_page_gets_both_the_link_and_the_player(self):
+        car = make_car()
+        car.video_url = "https://youtu.be/dQw4w9WgXcQ"
+        car.save()
+
+        response = self.client.get(f"/api/cars/{car.pk}/")
+
+        self.assertEqual(response.data["video_url"], "https://youtu.be/dQw4w9WgXcQ")
+        self.assertEqual(
+            response.data["video_embed_url"],
+            "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        )
+
+    def test_staff_api_refuses_an_unsupported_host_with_400(self):
+        self.staff_client()
+
+        response = self.client.post(
+            "/api/staff/cars/",
+            {
+                "make": "Toyota",
+                "model": "Prado",
+                "year": 2019,
+                "price": "4250000.00",
+                "description": "A car.",
+                "video_url": "https://example.com/clip.mp4",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_url", response.data)

@@ -24,6 +24,7 @@ class StaffCarSerializer(serializers.ModelSerializer):
             "reference",
             "expires_at",
             "is_expired",
+            "video_url",
         ]
 
     def validate_vin(self, vin):

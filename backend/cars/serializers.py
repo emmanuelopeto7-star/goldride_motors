@@ -73,6 +73,9 @@ class CarSerializer(serializers.ModelSerializer):
     body_type_label = serializers.CharField(
         source='get_body_type_display', read_only=True
     )
+    # The player URL, so the detail page can drop it straight into an iframe
+    # without knowing the difference between a watch link and an embed link.
+    video_embed_url = serializers.CharField(read_only=True)
 
     class Meta:
         model = Car
@@ -85,5 +88,5 @@ class CarSerializer(serializers.ModelSerializer):
             'drivetrain', 'drivetrain_label',
             'body_type', 'body_type_label',
             'exterior_colour', 'interior_colour', 'location', 'vin', 'reference',
-            'expires_at',
+            'expires_at', 'video_url', 'video_embed_url',
         ]

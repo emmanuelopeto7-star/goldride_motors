@@ -28,7 +28,7 @@ class CarAdmin(admin.ModelAdmin):
         (None, {
             "fields": [
                 "make", "model", "year", "price", "condition", "availability",
-                "description", "image",
+                "description", "image", "video_url",
             ],
         }),
         ("Specification", {

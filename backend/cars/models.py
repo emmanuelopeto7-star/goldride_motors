@@ -6,6 +6,8 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
+from .video import embed_url, validate_video_url
+
 
 def validate_hero_video_size(value):
     """A hero that takes ten seconds to arrive is worse than a still one."""
@@ -109,6 +111,17 @@ class Car(models.Model):
                   "clear it to keep a listing up indefinitely.",
     )
 
+    # A walkthrough answers the questions photographs cannot - what it sounds
+    # like on start, whether the panel gaps are even - which is why a buyer who
+    # watches one is far likelier to enquire.
+    video_url = models.URLField(
+        blank=True,
+        validators=[validate_video_url],
+        verbose_name="Walkthrough video",
+        help_text="YouTube or Vimeo link. Paste the share URL; the embed is "
+                  "worked out from it.",
+    )
+
     # Blank for our own photography. Filled when an image is used under a
     # licence that requires crediting the photographer - CC BY-SA and similar.
     photo_credit = models.CharField(max_length=200, blank=True)
@@ -143,6 +156,12 @@ class Car(models.Model):
         # compares the normalised value rather than whatever was typed.
         self.normalise_vin()
         super().clean()
+
+    @property
+    def video_embed_url(self):
+        """Derived, never stored - if the parsing rules change, existing rows
+        pick that up without a migration."""
+        return embed_url(self.video_url)
 
     @property
     def is_expired(self):
