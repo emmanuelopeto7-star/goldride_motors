@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Navigate, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AccountLayout from './pages/AccountLayout'
@@ -12,10 +12,27 @@ import MyRequests from './pages/MyRequests'
 import MySaved from './pages/MySaved'
 import NotFound from './pages/NotFound'
 import TrackOrder from './pages/TrackOrder'
+import StaffApprovals from './pages/staff/StaffApprovals'
+import StaffLayout from './pages/staff/StaffLayout'
 
 function App() {
   return (
     <Routes>
+      {/* Outside <Layout> on purpose: the dashboard has its own shell, with
+          none of the storefront's hero-aware header, search or footer.
+          isSales covers Manager too, and the API re-checks every call. */}
+      <Route
+        path="/staff"
+        element={
+          <ProtectedRoute allow={(auth) => auth.isSales}>
+            <StaffLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/staff/approvals" replace />} />
+        <Route path="approvals" element={<StaffApprovals />} />
+      </Route>
+
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
         <Route path="/cars/:id" element={<CarDetail />} />
