@@ -203,6 +203,11 @@ EMAIL_VERIFICATION_TIMEOUT = config(
     'EMAIL_VERIFICATION_TIMEOUT', default=60 * 60 * 24 * 3, cast=int
 )
 
+# How long a listing stays on the site before it needs renewing. A car sold
+# privately months ago should not still be answering searches; making the
+# seller confirm it is still for sale is the cheapest way to find out.
+LISTING_LIFETIME_DAYS = config('LISTING_LIFETIME_DAYS', default=45, cast=int)
+
 # Tests only. PBKDF2 is deliberately slow, and the suite creates hundreds of
 # users - that cost was most of a three minute run. This hasher is weak on
 # purpose and never touches a real password: the branch cannot be reached

@@ -2,6 +2,7 @@ from django.urls import path
 
 from .staff_views import (
     StaffCarDetailView,
+    StaffCarExtendView,
     StaffCarImageDetailView,
     StaffCarImageView,
     StaffCarListView,
@@ -17,6 +18,7 @@ from .staff_views import (
 urlpatterns = [
     path("cars/", StaffCarListView.as_view()),
     path("cars/<int:pk>/", StaffCarDetailView.as_view()),
+    path("cars/<int:pk>/extend/", StaffCarExtendView.as_view()),
     path("car-images/", StaffCarImageView.as_view()),
     path("car-images/<int:pk>/", StaffCarImageDetailView.as_view()),
 

@@ -85,4 +85,5 @@ class CarSerializer(serializers.ModelSerializer):
             'drivetrain', 'drivetrain_label',
             'body_type', 'body_type_label',
             'exterior_colour', 'interior_colour', 'location', 'vin', 'reference',
+            'expires_at',
         ]

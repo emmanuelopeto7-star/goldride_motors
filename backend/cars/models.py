@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.utils import timezone
 
 
 def validate_hero_video_size(value):
@@ -9,6 +12,23 @@ def validate_hero_video_size(value):
     limit = 5 * 1024 * 1024
     if value.size > limit:
         raise ValidationError("Keep the hero video under 5MB.")
+
+
+def default_listing_expiry():
+    return timezone.now() + timedelta(days=settings.LISTING_LIFETIME_DAYS)
+
+
+class CarQuerySet(models.QuerySet):
+    def live(self):
+        """What the public may see: everything that has not lapsed.
+
+        Expiry is evaluated on read rather than swept by a cron job - there is
+        no window in which an expired listing is still being served, and no
+        scheduler to keep alive.
+        """
+        return self.filter(
+            models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=timezone.now())
+        )
 
 class Car(models.Model):
     condition_choices = [
@@ -79,10 +99,22 @@ class Car(models.Model):
     )
     reference = models.CharField(max_length=40, blank=True)
 
+    # Set on first save and pushed out again whenever staff renew. Blank means
+    # "never expires", which is the escape hatch for a flagship unit that
+    # should stay up regardless.
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this listing drops off the site. Filled in on creation; "
+                  "clear it to keep a listing up indefinitely.",
+    )
+
     # Blank for our own photography. Filled when an image is used under a
     # licence that requires crediting the photographer - CC BY-SA and similar.
     photo_credit = models.CharField(max_length=200, blank=True)
     photo_source = models.URLField(blank=True)
+
+    objects = CarQuerySet.as_manager()
 
     class Meta:
         constraints = [
@@ -112,8 +144,24 @@ class Car(models.Model):
         self.normalise_vin()
         super().clean()
 
+    @property
+    def is_expired(self):
+        return self.expires_at is not None and self.expires_at <= timezone.now()
+
+    def extend(self, days=None):
+        """Renew from now, not from the old expiry - renewing a listing that
+        lapsed a month ago should still give it a full window."""
+        days = settings.LISTING_LIFETIME_DAYS if days is None else days
+        self.expires_at = timezone.now() + timedelta(days=days)
+        self.save(update_fields=["expires_at"])
+        return self.expires_at
+
     def save(self, *args, **kwargs):
         self.normalise_vin()
+        # Only on insert. An update must never silently revive a lapsed listing,
+        # and clearing expires_at by hand has to stay meaningful.
+        if self._state.adding and self.expires_at is None:
+            self.expires_at = default_listing_expiry()
         super().save(*args, **kwargs)
 
     def __str__(self):

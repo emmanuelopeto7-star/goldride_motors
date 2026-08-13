@@ -6,6 +6,8 @@ from payments.models import Payment
 
 
 class StaffCarSerializer(serializers.ModelSerializer):
+    is_expired = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Car
         fields = [
@@ -20,6 +22,8 @@ class StaffCarSerializer(serializers.ModelSerializer):
             "image",
             "vin",
             "reference",
+            "expires_at",
+            "is_expired",
         ]
 
     def validate_vin(self, vin):

@@ -14,7 +14,7 @@ from .serializers import (
 from django_filters.rest_framework import DjangoFilterBackend
 
 class carListVeiw(generics.ListAPIView):
-    queryset = Car.objects.all().order_by("-id")
+    queryset = Car.objects.live().order_by("-id")
     serializer_class = CarSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['make', 'model', 'description']
@@ -24,7 +24,9 @@ class carListVeiw(generics.ListAPIView):
     ]
     ordering_fields = ['price', 'year', 'mileage_km']
 class carDetailView(generics.RetrieveAPIView):
-    queryset = Car.objects.all()
+    # A lapsed listing 404s rather than rendering, so a stale link from a search
+    # engine does not turn into an enquiry about a car that is long gone.
+    queryset = Car.objects.live()
     serializer_class = CarSerializer
 
 
@@ -33,7 +35,8 @@ class CarMakesView(generics.ListAPIView):
 
     Feeds the header brand strip and the make grid, neither of which can be
     built from a paginated page of cars. Counts match what filtering by that
-    make actually returns, so nothing is excluded here.
+    make actually returns, which is why expired listings are dropped here too -
+    a make offering "3 cars" that lists two would be worse than not showing it.
     """
 
     serializer_class = CarMakeSerializer
@@ -41,7 +44,7 @@ class CarMakesView(generics.ListAPIView):
 
     def get_queryset(self):
         return (
-            Car.objects.values("make")
+            Car.objects.live().values("make")
             .annotate(count=Count("id"))
             .order_by("-count", "make")
         )
@@ -56,7 +59,7 @@ class CarModelsView(generics.ListAPIView):
 
     def get_queryset(self):
         return (
-            Car.objects.values("make", "model")
+            Car.objects.live().values("make", "model")
             # Max over the upload path picks a non-empty one when any car of
             # this model has a photo; "" sorts below every real path.
             .annotate(count=Count("id"), image=Max("image"))

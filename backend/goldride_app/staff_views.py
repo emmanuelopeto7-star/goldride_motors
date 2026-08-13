@@ -34,6 +34,8 @@ class ManagerToDelete:
 # --- cars ------------------------------------------------------------------
 
 class StaffCarListView(generics.ListCreateAPIView):
+    # Deliberately not .live() - staff are the only people who can renew a
+    # lapsed listing, so they are the only people who must still see it.
     queryset = Car.objects.all().order_by("-id")
     serializer_class = StaffCarSerializer
     permission_classes = [IsSales]
@@ -43,10 +45,58 @@ class StaffCarListView(generics.ListCreateAPIView):
     # on the lot, so it has to reach the staff list and not just the admin.
     search_fields = ["make", "model", "description", "vin", "reference"]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # ?expired=true is the renewal worklist; the expression is a date
+        # comparison rather than a column, so it cannot be a filterset field.
+        expired = self.request.query_params.get("expired")
+        if expired in ("true", "1"):
+            queryset = queryset.exclude(pk__in=Car.objects.live().values("pk"))
+        elif expired in ("false", "0"):
+            queryset = queryset.filter(pk__in=Car.objects.live().values("pk"))
+        return queryset
+
 
 class StaffCarDetailView(ManagerToDelete, generics.RetrieveUpdateDestroyAPIView):
     queryset = Car.objects.all()
     serializer_class = StaffCarSerializer
+
+
+class StaffCarExtendView(APIView):
+    """Renew a listing that is about to lapse, or has already.
+
+    Sales rather than Manager: confirming a car is still for sale is the
+    routine half of the job, and putting a manager in the way of it is how you
+    end up with the expiry sweep being switched off.
+    """
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        request=inline_serializer('ExtendListing', {
+            'days': serializers.IntegerField(required=False),
+        }),
+        responses={200: StaffCarSerializer},
+        description="Push a listing's expiry out from now. Defaults to "
+                    "LISTING_LIFETIME_DAYS.",
+    )
+    def post(self, request, pk):
+        try:
+            car = Car.objects.get(pk=pk)
+        except Car.DoesNotExist:
+            return Response({"error": "not found"}, status=404)
+
+        days = request.data.get("days")
+        if days is not None:
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return Response({"days": "Must be a whole number of days."}, status=400)
+            if days < 1:
+                return Response({"days": "Must be at least one day."}, status=400)
+
+        car.extend(days)
+        return Response(StaffCarSerializer(car, context={"request": request}).data)
 
 
 class StaffCarImageView(generics.ListCreateAPIView):

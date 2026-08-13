@@ -1,9 +1,11 @@
 import tempfile
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import IntegrityError
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
@@ -399,3 +401,142 @@ class VinUniquenessTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["id"], car.pk)
+
+
+class ListingExpiryTests(APITestCase):
+    """Doc gap 3.1 (MEDIUM): listings stayed active indefinitely, so cars sold
+    months earlier kept answering searches."""
+
+    def staff_client(self):
+        User = get_user_model()
+        user = User.objects.create_user("sales2", "sales2@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def expired_car(self, **kwargs):
+        car = make_car(**kwargs)
+        car.expires_at = timezone.now() - timedelta(days=1)
+        car.save(update_fields=["expires_at"])
+        return car
+
+    def test_a_new_listing_gets_an_expiry_without_being_asked(self):
+        car = make_car()
+
+        self.assertIsNotNone(car.expires_at)
+        self.assertFalse(car.is_expired)
+
+    def test_expired_listings_are_absent_from_the_public_list(self):
+        live = make_car(model="Prado")
+        self.expired_car(model="Demio")
+
+        response = self.client.get("/api/cars/")
+
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], live.pk)
+
+    def test_an_expired_listing_404s_rather_than_rendering(self):
+        """A stale search result must not turn into an enquiry."""
+        car = self.expired_car()
+
+        response = self.client.get(f"/api/cars/{car.pk}/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_make_counts_ignore_expired_listings(self):
+        """Counts have to match what filtering by that make returns."""
+        make_car(make="Toyota", model="Prado")
+        self.expired_car(make="Toyota", model="Hilux")
+
+        response = self.client.get("/api/cars/makes/")
+
+        self.assertEqual(response.data, [{"make": "Toyota", "count": 1}])
+
+    def test_model_carousel_ignores_expired_listings(self):
+        make_car(make="Toyota", model="Prado")
+        self.expired_car(make="Mazda", model="Demio")
+
+        response = self.client.get("/api/cars/models/")
+
+        self.assertEqual([row["model"] for row in response.data], ["Prado"])
+
+    def test_a_listing_with_no_expiry_never_lapses(self):
+        """The escape hatch for a unit that should stay up regardless."""
+        car = make_car()
+        car.expires_at = None
+        car.save(update_fields=["expires_at"])
+
+        self.assertFalse(car.is_expired)
+        self.assertEqual(self.client.get("/api/cars/").data["count"], 1)
+
+    def test_saving_an_existing_car_does_not_revive_it(self):
+        """Only inserts get a default - otherwise any edit would silently renew."""
+        car = self.expired_car()
+
+        car.price = Decimal("3999000.00")
+        car.save()
+
+        car.refresh_from_db()
+        self.assertTrue(car.is_expired)
+
+    def test_extend_renews_from_now_not_from_the_old_expiry(self):
+        car = self.expired_car()
+
+        car.extend()
+
+        self.assertFalse(car.is_expired)
+        self.assertGreater(car.expires_at, timezone.now() + timedelta(days=40))
+
+    def test_staff_can_renew_a_lapsed_listing(self):
+        car = self.expired_car()
+        self.staff_client()
+
+        response = self.client.post(f"/api/staff/cars/{car.pk}/extend/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_expired"])
+        self.assertEqual(self.client.get("/api/cars/").data["count"], 1)
+
+    def test_staff_can_renew_for_a_chosen_number_of_days(self):
+        car = make_car()
+        self.staff_client()
+
+        response = self.client.post(f"/api/staff/cars/{car.pk}/extend/", {"days": 7})
+
+        self.assertEqual(response.status_code, 200)
+        car.refresh_from_db()
+        self.assertLess(car.expires_at, timezone.now() + timedelta(days=8))
+
+    def test_a_nonsense_renewal_window_is_refused(self):
+        car = make_car()
+        self.staff_client()
+
+        response = self.client.post(f"/api/staff/cars/{car.pk}/extend/", {"days": 0})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_renewing_requires_staff(self):
+        car = make_car()
+
+        response = self.client.post(f"/api/staff/cars/{car.pk}/extend/")
+
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_staff_still_see_expired_listings(self):
+        """They are the only people who can renew one."""
+        self.expired_car()
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/")
+
+        self.assertEqual(len(response.data["results"]), 1)
+
+    def test_staff_can_filter_down_to_the_renewal_worklist(self):
+        make_car(model="Prado")
+        lapsed = self.expired_car(model="Demio")
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/?expired=true")
+
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], lapsed.pk)
