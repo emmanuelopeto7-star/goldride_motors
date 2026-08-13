@@ -39,7 +39,9 @@ class StaffCarListView(generics.ListCreateAPIView):
     permission_classes = [IsSales]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["make", "model", "year", "condition", "availability"]
-    search_fields = ["make", "model", "description"]
+    # Chassis search matters most to whoever is checking a unit is not already
+    # on the lot, so it has to reach the staff list and not just the admin.
+    search_fields = ["make", "model", "description", "vin", "reference"]
 
 
 class StaffCarDetailView(ManagerToDelete, generics.RetrieveUpdateDestroyAPIView):

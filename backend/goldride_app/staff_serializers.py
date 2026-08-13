@@ -18,7 +18,26 @@ class StaffCarSerializer(serializers.ModelSerializer):
             "availability",
             "description",
             "image",
+            "vin",
+            "reference",
         ]
+
+    def validate_vin(self, vin):
+        """DRF skips conditional UniqueConstraints when it builds validators, so
+        without this the clash surfaces as a 500 from the database instead of a
+        400 naming the field."""
+        if not vin:
+            return vin
+
+        vin = vin.strip().upper()
+        clash = Car.objects.filter(vin=vin)
+        if self.instance:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError(
+                "Another listing already uses this VIN / chassis number."
+            )
+        return vin
 
 
 class StaffCarImageSerializer(serializers.ModelSerializer):

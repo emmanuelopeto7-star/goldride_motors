@@ -66,7 +66,17 @@ class Car(models.Model):
     exterior_colour = models.CharField(max_length=40, blank=True)
     interior_colour = models.CharField(max_length=40, blank=True)
     location = models.CharField(max_length=80, blank=True)
-    vin = models.CharField(max_length=17, blank=True)
+    # The one field that identifies a physical vehicle. Blank is allowed - a car
+    # can be listed before the logbook is in hand - but two listings may not
+    # claim the same one, which is what stops a seller listing the same unit
+    # twice or inventing a car that does not exist.
+    vin = models.CharField(
+        max_length=17,
+        blank=True,
+        verbose_name="VIN / chassis number",
+        help_text="Chassis number for Japanese imports. Leave blank until "
+                  "confirmed - but once set it must be unique across listings.",
+    )
     reference = models.CharField(max_length=40, blank=True)
 
     # Blank for our own photography. Filled when an image is used under a
@@ -74,9 +84,41 @@ class Car(models.Model):
     photo_credit = models.CharField(max_length=200, blank=True)
     photo_source = models.URLField(blank=True)
 
+    class Meta:
+        constraints = [
+            # Conditional, because "no VIN yet" is a normal state and every
+            # blank would otherwise collide with every other blank. Uniqueness
+            # is only meaningful once someone has actually filled it in.
+            models.UniqueConstraint(
+                fields=["vin"],
+                condition=~models.Q(vin=""),
+                name="unique_vin_when_set",
+                violation_error_message="Another listing already uses this VIN / chassis number.",
+            )
+        ]
+
+    def normalise_vin(self):
+        """Uppercase and trim, so the constraint above catches 'abc' vs 'ABC '.
+
+        Cheaper and more portable than a case-insensitive index: store one
+        canonical form and a plain unique constraint does the work.
+        """
+        if self.vin:
+            self.vin = self.vin.strip().upper()
+
+    def clean(self):
+        # Runs before validate_constraints() in full_clean(), so the admin
+        # compares the normalised value rather than whatever was typed.
+        self.normalise_vin()
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.normalise_vin()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.make} {self.model} ({self.year}) - {self.condition} - ${self.price} - {self.description}"
-    image=models.ImageField(upload_to='cars/', blank=True)    
+    image=models.ImageField(upload_to='cars/', blank=True)
 
 class Favourite(models.Model):
     """A car someone has saved. CASCADE both ways: a saved car is a bookmark,

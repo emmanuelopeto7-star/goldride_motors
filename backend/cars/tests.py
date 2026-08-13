@@ -2,10 +2,13 @@ import tempfile
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db.utils import IntegrityError
 from django.test import override_settings
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 
 from .models import Car, Favourite, HeroBanner
 
@@ -274,3 +277,125 @@ class HeroBannerTests(APITestCase):
 
         self.assertTrue(response.data["image"])
         self.assertNotEqual(response.data["image"], response.data["video"])
+
+
+class VinUniquenessTests(APITestCase):
+    """Doc gap 3.1 (HIGH): listings were matched by make/model/year alone, so
+    nothing stopped the same physical car being listed twice."""
+
+    def staff_client(self):
+        User = get_user_model()
+        user = User.objects.create_user("sales", "sales@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_two_listings_cannot_share_a_vin(self):
+        make_car()
+        Car.objects.filter(make="Toyota").update(vin="JTEBH9FJ40K123456")
+
+        with self.assertRaises(IntegrityError):
+            Car.objects.create(
+                make="Toyota",
+                model="Prado",
+                year=2019,
+                price=Decimal("4250000.00"),
+                description="The same car again.",
+                vin="JTEBH9FJ40K123456",
+            )
+
+    def test_many_listings_may_have_no_vin(self):
+        """Blank is the normal state before the logbook arrives - the constraint
+        must not turn that into a collision."""
+        make_car(model="Prado")
+        make_car(model="Hilux")
+        make_car(model="Demio")
+
+        self.assertEqual(Car.objects.filter(vin="").count(), 3)
+
+    def test_vin_is_stored_uppercase_and_trimmed(self):
+        car = make_car()
+        car.vin = "  jtebh9fj40k123456 "
+        car.save()
+
+        car.refresh_from_db()
+        self.assertEqual(car.vin, "JTEBH9FJ40K123456")
+
+    def test_differently_cased_vins_still_collide(self):
+        """Normalising on save is what makes the plain constraint case-blind."""
+        car = make_car()
+        car.vin = "JTEBH9FJ40K123456"
+        car.save()
+
+        with self.assertRaises(IntegrityError):
+            second = make_car(model="Land Cruiser")
+            second.vin = "jtebh9fj40k123456"
+            second.save()
+
+    def test_staff_api_rejects_a_duplicate_vin_with_400(self):
+        """A database IntegrityError would be a 500. Staff need the field name."""
+        first = make_car()
+        first.vin = "JTEBH9FJ40K123456"
+        first.save()
+        self.staff_client()
+
+        response = self.client.post(
+            "/api/staff/cars/",
+            {
+                "make": "Toyota",
+                "model": "Prado",
+                "year": 2019,
+                "price": "4250000.00",
+                "description": "Duplicate.",
+                "vin": "jtebh9fj40k123456",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("vin", response.data)
+
+    def test_staff_api_accepts_a_fresh_vin(self):
+        self.staff_client()
+
+        response = self.client.post(
+            "/api/staff/cars/",
+            {
+                "make": "Toyota",
+                "model": "Hilux",
+                "year": 2020,
+                "price": "3950000.00",
+                "description": "A pickup.",
+                "vin": "mr0fz29g001234567"[:17],
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["vin"], "MR0FZ29G001234567")
+
+    def test_editing_a_car_may_keep_its_own_vin(self):
+        """Excluding self from the clash check - otherwise no car with a VIN
+        could ever be edited again."""
+        car = make_car()
+        car.vin = "JTEBH9FJ40K123456"
+        car.save()
+        self.staff_client()
+
+        response = self.client.patch(
+            f"/api/staff/cars/{car.pk}/",
+            {"vin": "JTEBH9FJ40K123456", "price": "4100000.00"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_staff_can_search_by_chassis_number(self):
+        car = make_car()
+        car.vin = "JTEBH9FJ40K123456"
+        car.save()
+        make_car(model="Demio")
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/?search=JTEBH9FJ40K123456")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], car.pk)
