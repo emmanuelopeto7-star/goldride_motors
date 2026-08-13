@@ -64,6 +64,7 @@ class StaffOrderSerializer(serializers.ModelSerializer):
     )
     balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     is_settled = serializers.BooleanField(read_only=True)
+    is_cancelled = serializers.BooleanField(read_only=True)
     milestones = StaffMilestoneSerializer(many=True, read_only=True)
 
     class Meta:
@@ -80,11 +81,19 @@ class StaffOrderSerializer(serializers.ModelSerializer):
             "amount_paid",
             "balance",
             "is_settled",
+            "is_cancelled",
+            "cancelled_at",
+            "cancel_reason",
+            "reactivated_at",
             "token",
             "created_at",
             "milestones",
         ]
-        read_only_fields = ["token", "created_at"]
+        # Cancelling and reactivating go through their own endpoints so the
+        # car's availability is always moved with them.
+        read_only_fields = [
+            "token", "created_at", "cancelled_at", "reactivated_at",
+        ]
 
     def validate_car(self, car):
         if car is None:
@@ -93,7 +102,9 @@ class StaffOrderSerializer(serializers.ModelSerializer):
         if car.availability == "sold":
             raise serializers.ValidationError("This car has already been sold.")
 
-        clash = ImportOrder.objects.filter(car=car)
+        # Matches ImportOrder.clean(): a cancelled order released its car, so it
+        # no longer blocks a new one.
+        clash = ImportOrder.objects.filter(car=car, cancelled_at__isnull=True)
         if self.instance:
             clash = clash.exclude(pk=self.instance.pk)
         if clash.exists():

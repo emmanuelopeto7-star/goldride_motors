@@ -8,10 +8,19 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
 class TrackingSerializer(serializers.ModelSerializer):
     milestones = MilestoneSerializer(many=True, read_only=True)
+    is_cancelled = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = ImportOrder
-        fields = ["car_description", "current_stage", "milestones"]
+        # cancel_reason is deliberately absent: this page is public to anyone
+        # holding the link, and the reason can be personal.
+        fields = [
+            "car_description",
+            "current_stage",
+            "is_cancelled",
+            "cancelled_at",
+            "milestones",
+        ]
 
 
 class CustomerOrderSerializer(serializers.ModelSerializer):
@@ -23,6 +32,7 @@ class CustomerOrderSerializer(serializers.ModelSerializer):
         max_digits=12, decimal_places=2, read_only=True
     )
     is_settled = serializers.BooleanField(read_only=True)
+    is_cancelled = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = ImportOrder
@@ -34,6 +44,9 @@ class CustomerOrderSerializer(serializers.ModelSerializer):
             "amount_paid",
             "balance",
             "is_settled",
+            "is_cancelled",
+            "cancelled_at",
+            "cancel_reason",
             "token",
             "created_at",
             "milestones",

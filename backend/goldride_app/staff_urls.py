@@ -11,6 +11,7 @@ from .staff_views import (
     StaffOrderListView,
     StaffPaymentDispatchView,
     StaffPaymentListView,
+    StaffReactivateOrderView,
     StaffReconcileAllView,
     StaffReconcileOneView,
 )
@@ -24,6 +25,7 @@ urlpatterns = [
 
     path("orders/", StaffOrderListView.as_view()),
     path("orders/<int:pk>/", StaffOrderDetailView.as_view()),
+    path("orders/<int:pk>/reactivate/", StaffReactivateOrderView.as_view()),
     path("milestones/", StaffMilestoneView.as_view()),
 
     path("payments/", StaffPaymentListView.as_view()),

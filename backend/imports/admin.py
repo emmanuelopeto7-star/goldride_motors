@@ -25,12 +25,29 @@ class ImportOrderAdmin(admin.ModelAdmin):
         "total_amount",
         "amount_paid",
         "balance",
+        "is_cancelled",
         "created_at",
     ]
-    list_filter = ["current_stage"]
+    list_filter = ["current_stage", "cancelled_at"]
     search_fields = ["customer_name", "phone", "car_description", "customer__username"]
-    readonly_fields = ["token", "created_at", "amount_paid", "balance", "is_settled"]
+    readonly_fields = [
+        "token", "created_at", "amount_paid", "balance", "is_settled",
+        "cancelled_at", "reactivated_at",
+    ]
     inlines = [MilestoneInline, PaymentInline]
+    actions = ["cancel_orders"]
+
+    @admin.display(boolean=True, description="Cancelled")
+    def is_cancelled(self, obj):
+        return obj.is_cancelled
+
+    @admin.action(description="Cancel selected orders and release their cars")
+    def cancel_orders(self, request, queryset):
+        cancelled = 0
+        for order in queryset:
+            ok, _ = order.cancel(reason="Cancelled by staff", by=request.user)
+            cancelled += 1 if ok else 0
+        self.message_user(request, f"Cancelled {cancelled} order(s).")
 
     
 

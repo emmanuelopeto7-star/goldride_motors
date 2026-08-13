@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from cars.models import Car, CarImage
 from imports.models import ImportMilestone, ImportOrder
+from imports.services import send_reengagement
 from payments.dispatch import dispatch_payment
 from payments.serializers import CheckoutResponseSerializer, DispatchRequestSerializer
 from payments.models import Payment
@@ -122,10 +123,64 @@ class StaffOrderListView(generics.ListCreateAPIView):
     filterset_fields = ["current_stage"]
     search_fields = ["customer_name", "phone", "car_description"]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # ?cancelled=true is the re-engagement worklist - the list of people
+        # who walked away and might still be won back.
+        cancelled = self.request.query_params.get("cancelled")
+        if cancelled in ("true", "1"):
+            queryset = queryset.filter(cancelled_at__isnull=False)
+        elif cancelled in ("false", "0"):
+            queryset = queryset.filter(cancelled_at__isnull=True)
+        return queryset
+
 
 class StaffOrderDetailView(ManagerToDelete, generics.RetrieveUpdateDestroyAPIView):
     queryset = ImportOrder.objects.all()
     serializer_class = StaffOrderSerializer
+
+
+class StaffReactivateOrderView(APIView):
+    """Bring a cancelled order back and tell the customer why.
+
+    The message is required. Reopening an order silently would leave the
+    customer to discover it from a tracking page they had stopped watching,
+    which is not re-engagement.
+    """
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        request=inline_serializer('ReactivateOrder', {
+            'message': serializers.CharField(),
+        }),
+        responses={200: StaffOrderSerializer},
+        description="Reopen a cancelled import order and email the customer a "
+                    "reason to come back.",
+    )
+    def post(self, request, pk):
+        try:
+            order = ImportOrder.objects.get(pk=pk)
+        except ImportOrder.DoesNotExist:
+            return Response({"error": "not found"}, status=404)
+
+        message = (request.data.get("message") or "").strip()
+        if not message:
+            return Response(
+                {"message": "Say what has changed - an offer, or a unit found."},
+                status=400,
+            )
+
+        ok, detail = order.reactivate()
+        if not ok:
+            return Response({"error": detail}, status=400)
+
+        emailed = send_reengagement(order, message)
+        data = StaffOrderSerializer(order).data
+        # Reported rather than fatal: the order is open either way, and a
+        # customer with no address on file still needs chasing by phone.
+        data["emailed"] = emailed
+        return Response(data)
 
 
 class StaffMilestoneView(generics.ListCreateAPIView):
