@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
 import { formatPrice } from '../lib/format'
 import Gallery from '../components/Gallery'
+import VideoWalkthrough from '../components/VideoWalkthrough'
 import EnquiryPanel from '../components/EnquiryPanel'
 import ErrorState from '../components/ErrorState'
 import Page from '../components/Page'
@@ -135,6 +136,8 @@ function CarDetail() {
               </button>
             )}
           </section>
+
+          <VideoWalkthrough src={car.video_embed_url} title={title} />
 
           {details.length > 0 && (
             <section className="mt-12">
