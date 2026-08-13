@@ -24,7 +24,7 @@ function Layout() {
   const [term, setTerm] = useState(searchParams.get('search') ?? '')
   const [authOpen, setAuthOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const { user, signOut } = useAuth()
+  const { user, isSales, signOut } = useAuth()
 
   const scrolled = useScrolled(80)
   // Shares a cache entry with Hero, so this costs no extra request. Keyed on
@@ -85,6 +85,20 @@ function Layout() {
               so it cannot absorb the slack on a wide screen and the right-hand
               items would sit stranded in the middle. */}
           <div className="ml-auto flex shrink-0 items-center gap-6">
+          {/* Only staff see it, so it costs a customer nothing. The route is
+              guarded and the API re-checks regardless - this is a shortcut,
+              not the permission. */}
+          {isSales && (
+            <Link
+              to="/staff"
+              className={`hidden shrink-0 text-meta underline lg:block ${
+                overlay ? 'text-surface' : 'text-ink'
+              }`}
+            >
+              Staff
+            </Link>
+          )}
+
           {user && (
             <Link
               to="/my/orders"

@@ -24,7 +24,7 @@ const ACCOUNT_LINKS = [
 
 function MobileMenu({ onClose, onSignIn }) {
   const location = useLocation()
-  const { user, signOut } = useAuth()
+  const { user, isSales, signOut } = useAuth()
 
   // Shares the cache entry with the filter bar and footer.
   const { data: makes } = useQuery({
@@ -76,6 +76,19 @@ function MobileMenu({ onClose, onSignIn }) {
                 </Link>
               </li>
             ))}
+          </ul>
+        </nav>
+      )}
+
+      {isSales && (
+        <nav className="mt-8 border-t border-line pt-8">
+          <p className={heading}>Staff</p>
+          <ul className="mt-3">
+            <li>
+              <Link to="/staff/approvals" className={link}>
+                Approvals
+              </Link>
+            </li>
           </ul>
         </nav>
       )}
