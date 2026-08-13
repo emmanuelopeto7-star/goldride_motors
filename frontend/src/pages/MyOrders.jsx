@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
 import { formatPrice } from '../lib/format'
+import CancelledBadge from '../components/CancelledBadge'
 import EmptyState from '../components/EmptyState'
 import ErrorState from '../components/ErrorState'
 import OrderProgress from '../components/OrderProgress'
@@ -65,13 +66,22 @@ function MyOrders() {
             <article key={order.id} className="border border-line bg-surface p-6 lg:p-8">
               <div className="flex flex-wrap items-baseline justify-between gap-4">
                 <h2 className="font-serif text-section">{order.car_description}</h2>
-                <span className="text-badge uppercase text-ink-soft">
-                  {order.is_settled ? 'Settled' : 'Balance outstanding'}
-                </span>
+                {/* Cancelled outranks the balance - what is owed on an order
+                    that is no longer running is not the useful fact. */}
+                {order.is_cancelled ? (
+                  <CancelledBadge />
+                ) : (
+                  <span className="text-badge uppercase text-ink-soft">
+                    {order.is_settled ? 'Settled' : 'Balance outstanding'}
+                  </span>
+                )}
               </div>
 
               <div className="mt-6">
-                <OrderProgress currentStage={order.current_stage} />
+                <OrderProgress
+                  currentStage={order.current_stage}
+                  cancelled={order.is_cancelled}
+                />
               </div>
 
               <dl className="mt-8 flex flex-wrap gap-x-16 gap-y-4">

@@ -6,13 +6,15 @@ const STAGES = [
   ['delivered', 'Delivered'],
 ]
 
-function OrderProgress({ currentStage }) {
+function OrderProgress({ currentStage, cancelled = false }) {
   const reached = STAGES.findIndex(([key]) => key === currentStage)
 
   return (
     <ol className="flex flex-wrap gap-x-2 gap-y-3">
       {STAGES.map(([key, label], index) => {
-        const done = index <= reached
+        // A cancelled order stopped moving, so nothing on the rail is marked
+        // as reached - filled dots would read as progress still being made.
+        const done = !cancelled && index <= reached
         return (
           <li key={key} className="flex items-center gap-2">
             <span

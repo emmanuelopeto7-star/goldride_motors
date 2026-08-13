@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
+import CancelledBadge from '../components/CancelledBadge'
 import ErrorState from '../components/ErrorState'
 import OrderProgress from '../components/OrderProgress'
 import Page from '../components/Page'
@@ -51,11 +52,26 @@ function TrackOrder() {
 
   return (
     <Page>
-      <p className="text-badge uppercase text-ink-soft">Import tracking</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-badge uppercase text-ink-soft">Import tracking</p>
+        {data.is_cancelled && <CancelledBadge />}
+      </div>
       <h1 className="mt-3 font-serif text-h1">{data.car_description}</h1>
 
       <div className="mt-10 border border-line bg-surface p-6 lg:p-8">
-        <OrderProgress currentStage={data.current_stage} />
+        <OrderProgress
+          currentStage={data.current_stage}
+          cancelled={data.is_cancelled}
+        />
+
+        {data.is_cancelled && (
+          <p className="mt-6 text-model text-ink-soft">
+            This request was cancelled
+            {data.cancelled_at &&
+              ` on ${new Date(data.cancelled_at).toLocaleDateString('en-KE')}`}
+            . Get in touch if you would like to pick it back up.
+          </p>
+        )}
 
         {data.milestones?.length > 0 ? (
           <ol className="mt-8 space-y-4 border-t border-line pt-8">
@@ -72,9 +88,13 @@ function TrackOrder() {
             ))}
           </ol>
         ) : (
-          <p className="mt-8 border-t border-line pt-8 text-model text-ink-soft">
-            No updates recorded yet. We will add each stage as it happens.
-          </p>
+          // Promising future updates on an order that stopped would be a lie,
+          // so a cancelled one with no history simply says nothing here.
+          !data.is_cancelled && (
+            <p className="mt-8 border-t border-line pt-8 text-model text-ink-soft">
+              No updates recorded yet. We will add each stage as it happens.
+            </p>
+          )
         )}
       </div>
 
