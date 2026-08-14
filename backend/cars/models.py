@@ -184,7 +184,12 @@ class Car(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.make} {self.model} ({self.year}) - {self.condition} - ${self.price} - {self.description}"
+        # Short on purpose. This string is not a summary of the car - it is the
+        # label Django puts in admin dropdowns, in `StringRelatedField`, in
+        # email subject lines, and (via ImportOrder) on the public tracking
+        # page. It used to trail the entire sales description and price the car
+        # in dollars, which made all four of those unreadable.
+        return f"{self.year} {self.make} {self.model}"
     image=models.ImageField(upload_to='cars/', blank=True)
 
 class Favourite(models.Model):
