@@ -19,14 +19,17 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+from cars.models import Car
 from imports.models import ImportOrder
 
 from .models import Payment
+from .notifications import send_payment_instructions
 from .reconciliation import ABANDONED_GRACE, reconcile_payment
 from .services import verify_paystack_signature
 
@@ -600,3 +603,111 @@ class InitiatePaymentTests(APITestCase):
             with self.subTest(body=body):
                 response = self.client.post(self.URL, body, format="json")
                 self.assertEqual(response.status_code, 400)
+
+
+class CheckoutNotificationTests(APITestCase):
+    """The link used to stop at the API response.
+
+    Paystack's initialize call returns an authorization URL and contacts
+    nobody, so an approved customer only found their link by signing in and
+    hunting for it. Approval is the moment they are waiting on.
+    """
+
+    def test_a_card_payment_emails_the_link(self):
+        payment = a_payment(method="card")
+        payment.checkout_url = "https://checkout.paystack.com/abc123"
+        payment.save(update_fields=["checkout_url"])
+        mail.outbox.clear()
+
+        sent = send_payment_instructions(payment, "buyer@example.com")
+
+        self.assertTrue(sent)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["buyer@example.com"])
+        self.assertIn("https://checkout.paystack.com/abc123", mail.outbox[0].body)
+
+    def test_an_mpesa_payment_points_at_the_phone_prompt(self):
+        """There is no link to send - the STK push is the delivery."""
+        payment = a_payment(method="mpesa")
+        mail.outbox.clear()
+
+        send_payment_instructions(payment, "buyer@example.com")
+
+        self.assertIn("M-PESA prompt", mail.outbox[0].body)
+
+    def test_a_manual_payment_says_why_and_what_happens_next(self):
+        """The common case on this inventory, and the one most needing an email."""
+        payment = a_payment(method="manual")
+        payment.note = "online payment unavailable: amount too large"
+        payment.save(update_fields=["note"])
+        mail.outbox.clear()
+
+        send_payment_instructions(payment, "buyer@example.com")
+
+        body = mail.outbox[0].body
+        self.assertIn("bank transfer", body)
+        self.assertIn("amount too large", body)
+
+    def test_a_card_payment_with_no_link_yet_sends_nothing(self):
+        """Dispatch failed - mailing "pay here" with no here is worse than silence."""
+        payment = a_payment(method="card")
+        mail.outbox.clear()
+
+        sent = send_payment_instructions(payment, "buyer@example.com")
+
+        self.assertFalse(sent)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_no_address_means_no_send(self):
+        payment = a_payment(method="mpesa")
+        mail.outbox.clear()
+
+        sent = send_payment_instructions(payment, "")
+
+        self.assertFalse(sent)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_sending_is_stamped_on_the_payment(self):
+        """Staff need to tell "waiting on them" from "waiting on us"."""
+        payment = a_payment(method="mpesa")
+        self.assertIsNone(payment.checkout_sent_at)
+
+        send_payment_instructions(payment, "buyer@example.com")
+
+        payment.refresh_from_db()
+        self.assertIsNotNone(payment.checkout_sent_at)
+
+    def test_nothing_is_stamped_when_nothing_was_sent(self):
+        payment = a_payment(method="card")
+
+        send_payment_instructions(payment, "buyer@example.com")
+
+        payment.refresh_from_db()
+        self.assertIsNone(payment.checkout_sent_at)
+
+    def test_the_email_carries_the_tracking_link(self):
+        payment = a_payment(method="mpesa")
+        mail.outbox.clear()
+
+        send_payment_instructions(payment, "buyer@example.com")
+
+        self.assertIn(str(payment.order.token), mail.outbox[0].body)
+
+    def test_the_subject_uses_a_readable_car_name(self):
+        """Derived from the car, not from whatever car_description holds - old
+        orders still carry the blob the previous Car.__str__ wrote."""
+        car = Car.objects.create(
+            make="Toyota",
+            model="Prado",
+            year=2020,
+            price=Decimal("8900000.00"),
+            description="A very long description " * 20,
+        )
+        order = an_order(car=car, car_description="Toyota Prado - used - $8900000 - " + "blah " * 30)
+        payment = a_payment(order=order, method="mpesa")
+        mail.outbox.clear()
+
+        send_payment_instructions(payment, "buyer@example.com")
+
+        self.assertIn("2020 Toyota Prado", mail.outbox[0].subject)
+        self.assertLess(len(mail.outbox[0].subject), 80)
