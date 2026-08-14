@@ -5,6 +5,7 @@ from django.utils import timezone
 from imports.models import ImportOrder
 from payments.dispatch import dispatch_payment
 from payments.models import Payment
+from payments.notifications import send_payment_instructions
 
 
 def notify_sales(purchase_request):
@@ -39,7 +40,10 @@ def approve_request(purchase_request, reviewed_by, note=""):
         or purchase_request.customer.username,
         phone=purchase_request.phone,
         car=car,
-        car_description=str(car),
+        # Sliced to the column width. str(car) is short now, but this field is
+        # varchar(200) and Postgres raises DataError rather than truncating -
+        # the last thing that should 500 is approving a sale.
+        car_description=str(car)[:200],
         total_amount=car.price,
     )
 
@@ -67,6 +71,11 @@ def approve_request(purchase_request, reviewed_by, note=""):
         payment.method = "manual"
         payment.note = f"online payment unavailable: {detail}"[:200]
         payment.save(update_fields=["method", "note", "updated_at"])
+
+    # After the branch above, so the mail describes what actually happened
+    # rather than what we hoped would. Sent on failure too: an approval the
+    # customer never hears about is the worst of the three outcomes.
+    send_payment_instructions(payment, purchase_request.customer.email)
 
     return payment, ok, detail
 
