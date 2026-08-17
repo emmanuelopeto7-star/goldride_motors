@@ -19,6 +19,11 @@ class SourcedUnitSerializer(serializers.ModelSerializer):
     """
 
     cnf_kes = money()
+    # CIF, not C&F, is what the itemised quote leads with - it is the figure
+    # KRA assesses on, and using C&F leaves the lines short of the total by
+    # exactly the insurance, which is the one error a customer checking the
+    # arithmetic is guaranteed to find.
+    cif_kes = money()
     taxes_kes = money()
     import_duty_kes = money()
     excise_duty_kes = money()
@@ -35,7 +40,7 @@ class SourcedUnitSerializer(serializers.ModelSerializer):
             "id", "make", "model", "year", "mileage_km", "grade",
             "exterior_colour", "chassis_number", "auction_sheet_url", "photo",
             "dollar_rate",
-            "cnf_kes",
+            "cnf_kes", "cif_kes",
             "import_duty_kes", "excise_duty_kes", "vat_kes", "idf_kes",
             "rdl_kes", "taxes_kes",
             "clearing_kes", "service_fee_kes", "total_kes",
