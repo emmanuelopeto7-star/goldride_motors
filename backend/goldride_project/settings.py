@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import sys
+from decimal import Decimal
 from pathlib import Path
 from decouple import config
 import os
@@ -216,6 +217,24 @@ LISTING_LIFETIME_DAYS = config('LISTING_LIFETIME_DAYS', default=45, cast=int)
 # Refusing a unit at the quote stage is far cheaper than at the port.
 IMPORT_MAX_VEHICLE_AGE_YEARS = config(
     'IMPORT_MAX_VEHICLE_AGE_YEARS', default=7, cast=int
+)
+
+# KRA's charges on an imported vehicle, as percentages. Settings rather than
+# constants because every one of them has moved at some point and a rate
+# change must not need a deploy. Excise varies by engine capacity, so its rate
+# lives on the unit; this is only the default.
+IMPORT_DUTY_RATE = config('IMPORT_DUTY_RATE', default=Decimal('25'), cast=Decimal)
+IMPORT_EXCISE_RATE = config('IMPORT_EXCISE_RATE', default=Decimal('25'), cast=Decimal)
+IMPORT_VAT_RATE = config('IMPORT_VAT_RATE', default=Decimal('16'), cast=Decimal)
+IMPORT_IDF_RATE = config('IMPORT_IDF_RATE', default=Decimal('3.5'), cast=Decimal)
+IMPORT_RDL_RATE = config('IMPORT_RDL_RATE', default=Decimal('2'), cast=Decimal)
+
+# Default margin when a rejected sourced unit is converted into stock. Applied
+# to landed cost, not to the quoted total - the quote already carried a
+# commission for the customer who walked away, and charging it twice would
+# price the car out of its own market.
+PUSH_TO_STOCK_MARKUP_PERCENT = config(
+    'PUSH_TO_STOCK_MARKUP_PERCENT', default=15, cast=Decimal
 )
 
 # Tests only. PBKDF2 is deliberately slow, and the suite creates hundreds of
