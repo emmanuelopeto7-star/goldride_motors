@@ -6,9 +6,15 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
 from cars.models import Car, CarImage
-from imports.models import ImportMilestone, ImportOrder
-from imports.services import send_reengagement
+from imports.models import (
+    ImportMilestone,
+    ImportOrder,
+    ImportRequest,
+    SourcedUnit,
+)
+from imports.services import notify_units_sourced, send_reengagement
 from payments.dispatch import dispatch_payment
+from payments.notifications import send_payment_instructions
 from payments.serializers import CheckoutResponseSerializer, DispatchRequestSerializer
 from payments.models import Payment
 from payments.reconciliation import reconcile_payment, reconcile_pending
@@ -17,9 +23,11 @@ from .permissions import IsManager, IsSales
 from .staff_serializers import (
     StaffCarImageSerializer,
     StaffCarSerializer,
+    StaffImportRequestSerializer,
     StaffMilestoneSerializer,
     StaffOrderSerializer,
     StaffPaymentSerializer,
+    StaffSourcedUnitSerializer,
 )
 
 
@@ -238,9 +246,16 @@ class StaffPaymentDispatchView(APIView):
         if not ok:
             return Response({"error": detail}, status=400)
 
+        # Doubles as the resend: a customer who lost the email gets another by
+        # dispatching again, rather than staff pasting the URL into a chat.
+        emailed = send_payment_instructions(payment, email)
+
         if payment.method == "card":
-            return Response({"checkout_url": detail})
-        return Response({"detail": f"M-PESA prompt sent to {phone}"})
+            return Response({"checkout_url": detail, "emailed": emailed})
+        return Response({
+            "detail": f"M-PESA prompt sent to {phone}",
+            "emailed": emailed,
+        })
 
 
 class StaffReconcileAllView(APIView):
@@ -299,3 +314,73 @@ class StaffReconcileOneView(APIView):
             "detail": message,
             "status": payment.status,
         })
+
+
+# --- sourcing --------------------------------------------------------------
+
+class StaffImportRequestListView(generics.ListCreateAPIView):
+    queryset = ImportRequest.objects.prefetch_related("units").all()
+    serializer_class = StaffImportRequestSerializer
+    permission_classes = [IsSales]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["status", "make", "model"]
+    search_fields = ["contact_name", "email", "phone", "make", "model"]
+
+
+class StaffImportRequestDetailView(ManagerToDelete, generics.RetrieveUpdateDestroyAPIView):
+    queryset = ImportRequest.objects.prefetch_related("units")
+    serializer_class = StaffImportRequestSerializer
+
+
+class StaffSourcedUnitListView(generics.ListCreateAPIView):
+    """Adding a unit against a request is the sourcing step.
+
+    Creating the first one moves the request out of "pending" - the status
+    should follow from the work rather than needing to be set separately and
+    remembered.
+    """
+
+    queryset = SourcedUnit.objects.select_related("request").all()
+    serializer_class = StaffSourcedUnitSerializer
+    permission_classes = [IsSales]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["request", "status"]
+
+    def perform_create(self, serializer):
+        unit = serializer.save()
+        import_request = unit.request
+        if import_request.status == "pending":
+            import_request.status = "sourcing"
+            import_request.save(update_fields=["status"])
+
+
+class StaffSourcedUnitDetailView(ManagerToDelete, generics.RetrieveUpdateDestroyAPIView):
+    queryset = SourcedUnit.objects.select_related("request")
+    serializer_class = StaffSourcedUnitSerializer
+
+
+class StaffNotifySourcedView(APIView):
+    """Send the "we found some options" email and hand the choice over."""
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        request=None,
+        responses={200: StaffImportRequestSerializer},
+        description="Tell the customer their units are ready to look at.",
+    )
+    def post(self, request, pk):
+        try:
+            import_request = ImportRequest.objects.get(pk=pk)
+        except ImportRequest.DoesNotExist:
+            return Response({"error": "not found"}, status=404)
+
+        if not notify_units_sourced(import_request):
+            return Response(
+                {"error": "there are no units on offer to tell them about"},
+                status=400,
+            )
+
+        import_request.status = "awaiting_selection"
+        import_request.save(update_fields=["status"])
+        return Response(StaffImportRequestSerializer(import_request).data)

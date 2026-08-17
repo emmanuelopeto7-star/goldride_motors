@@ -6,7 +6,10 @@ from .staff_views import (
     StaffCarImageDetailView,
     StaffCarImageView,
     StaffCarListView,
+    StaffImportRequestDetailView,
+    StaffImportRequestListView,
     StaffMilestoneView,
+    StaffNotifySourcedView,
     StaffOrderDetailView,
     StaffOrderListView,
     StaffPaymentDispatchView,
@@ -14,6 +17,8 @@ from .staff_views import (
     StaffReactivateOrderView,
     StaffReconcileAllView,
     StaffReconcileOneView,
+    StaffSourcedUnitDetailView,
+    StaffSourcedUnitListView,
 )
 
 urlpatterns = [
@@ -27,6 +32,12 @@ urlpatterns = [
     path("orders/<int:pk>/", StaffOrderDetailView.as_view()),
     path("orders/<int:pk>/reactivate/", StaffReactivateOrderView.as_view()),
     path("milestones/", StaffMilestoneView.as_view()),
+
+    path("import-requests/", StaffImportRequestListView.as_view()),
+    path("import-requests/<int:pk>/", StaffImportRequestDetailView.as_view()),
+    path("import-requests/<int:pk>/notify/", StaffNotifySourcedView.as_view()),
+    path("sourced-units/", StaffSourcedUnitListView.as_view()),
+    path("sourced-units/<int:pk>/", StaffSourcedUnitDetailView.as_view()),
 
     path("payments/", StaffPaymentListView.as_view()),
     path("payments/<uuid:reference>/dispatch/", StaffPaymentDispatchView.as_view()),

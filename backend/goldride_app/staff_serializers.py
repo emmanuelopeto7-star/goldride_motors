@@ -1,7 +1,12 @@
 from rest_framework import serializers
 
 from cars.models import Car, CarImage
-from imports.models import ImportMilestone, ImportOrder
+from imports.models import (
+    ImportMilestone,
+    ImportOrder,
+    ImportRequest,
+    SourcedUnit,
+)
 from payments.models import Payment
 
 
@@ -128,6 +133,7 @@ class StaffPaymentSerializer(serializers.ModelSerializer):
             "status",
             "provider_ref",
             "checkout_url",
+            "checkout_sent_at",
             "note",
             "created_at",
             "updated_at",
@@ -136,6 +142,56 @@ class StaffPaymentSerializer(serializers.ModelSerializer):
             "reference",
             "provider_ref",
             "checkout_url",
+            "checkout_sent_at",
             "created_at",
             "updated_at",
         ]
+
+
+class StaffSourcedUnitSerializer(serializers.ModelSerializer):
+    """The full picture, including what the unit cost us.
+
+    Every step of the waterfall is exposed read-only alongside its inputs, so
+    the sourcing screen can show the arithmetic as it is typed rather than
+    making staff work out where a number came from.
+    """
+
+    cnf_usd = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    cif_usd = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    cnf_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    cif_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    landed_cost_kes = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True
+    )
+    total_kes = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True
+    )
+
+    class Meta:
+        model = SourcedUnit
+        fields = [
+            "id", "request",
+            "make", "model", "year", "chassis_number", "mileage_km", "grade",
+            "exterior_colour", "auction_sheet_url", "photo",
+            "unit_price_usd", "freight_usd", "insurance_usd", "dollar_rate",
+            "duty_kes", "clearing_kes", "service_fee_kes",
+            "cnf_usd", "cif_usd", "cnf_kes", "cif_kes",
+            "landed_cost_kes", "total_kes",
+            "status", "rejected_reason", "created_at",
+        ]
+        # Selection runs through the customer's own endpoint so that choosing
+        # one unit always rejects its siblings.
+        read_only_fields = ["status", "rejected_reason", "created_at"]
+
+
+class StaffImportRequestSerializer(serializers.ModelSerializer):
+    units = StaffSourcedUnitSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ImportRequest
+        fields = [
+            "id", "customer", "contact_name", "email", "phone",
+            "make", "model", "year", "budget_kes", "notes",
+            "status", "token", "created_at", "units",
+        ]
+        read_only_fields = ["token", "created_at"]
