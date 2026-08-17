@@ -1,3 +1,7 @@
+from decimal import Decimal
+
+from django.conf import settings
+
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import filters, generics, serializers
 from rest_framework.response import Response
@@ -9,6 +13,7 @@ from cars.models import Car, CarImage
 from imports.models import (
     ImportMilestone,
     ImportOrder,
+    ImportRates,
     ImportRequest,
     SourcedUnit,
 )
@@ -384,3 +389,91 @@ class StaffNotifySourcedView(APIView):
         import_request.status = "awaiting_selection"
         import_request.save(update_fields=["status"])
         return Response(StaffImportRequestSerializer(import_request).data)
+
+
+class StaffPushToStockView(APIView):
+    """The flywheel: a rejected sourced unit becomes a local listing.
+
+    Sales rather than Manager, matching StaffCarListView - creating a listing
+    is already something Sales may do, and routing this through a manager
+    would leave rejected units sitting unconverted, which is the exact waste
+    the feature exists to stop.
+    """
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        request=inline_serializer('PushToStock', {
+            'markup_percent': serializers.DecimalField(
+                max_digits=5, decimal_places=2, required=False
+            ),
+        }),
+        responses={201: StaffCarSerializer},
+        description="Convert a sourced unit into a local listing, priced at "
+                    "landed cost plus markup. Defaults to "
+                    "PUSH_TO_STOCK_MARKUP_PERCENT.",
+    )
+    def post(self, request, pk):
+        try:
+            unit = SourcedUnit.objects.get(pk=pk)
+        except SourcedUnit.DoesNotExist:
+            return Response({"error": "not found"}, status=404)
+
+        markup = request.data.get("markup_percent")
+        if markup is not None:
+            try:
+                markup = Decimal(str(markup))
+            except (ArithmeticError, ValueError):
+                return Response(
+                    {"markup_percent": "Must be a number."}, status=400
+                )
+            if markup < 0:
+                return Response(
+                    {"markup_percent": "Cannot be negative."}, status=400
+                )
+
+        car, detail = unit.push_to_stock(markup_percent=markup)
+        if car is None:
+            return Response({"error": detail}, status=400)
+
+        return Response(
+            StaffCarSerializer(car, context={"request": request}).data,
+            status=201,
+        )
+
+
+class StaffImportRatesView(APIView):
+    """The percentages the landing-cost arithmetic uses.
+
+    Served rather than hardcoded in the frontend so the sourcing screen can
+    preview a total live without the rates becoming a second source of truth.
+    They move - that is the whole reason they are settings - and a stale copy
+    baked into a JS bundle would quote customers the wrong number until
+    somebody noticed.
+    """
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        responses={200: inline_serializer('ImportRates', {
+            'duty': serializers.DecimalField(max_digits=5, decimal_places=2),
+            'excise_default': serializers.DecimalField(max_digits=5, decimal_places=2),
+            'vat': serializers.DecimalField(max_digits=5, decimal_places=2),
+            'idf': serializers.DecimalField(max_digits=5, decimal_places=2),
+            'rdl': serializers.DecimalField(max_digits=5, decimal_places=2),
+            'stock_markup': serializers.DecimalField(max_digits=5, decimal_places=2),
+            'effective_from': serializers.DateField(),
+        })},
+        description="KRA rates and the default stock markup, as percentages.",
+    )
+    def get(self, request):
+        rates = ImportRates.current()
+        return Response({
+            "duty": rates.duty_rate,
+            "excise_default": rates.excise_rate,
+            "vat": rates.vat_rate,
+            "idf": rates.idf_rate,
+            "rdl": rates.rdl_rate,
+            "stock_markup": rates.stock_markup,
+            "effective_from": rates.effective_from,
+        })
