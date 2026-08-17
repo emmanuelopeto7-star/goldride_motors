@@ -80,6 +80,17 @@ function MobileMenu({ onClose, onSignIn }) {
         </nav>
       )}
 
+      <nav className="mt-8 border-t border-line pt-8">
+        <p className={heading}>Import</p>
+        <ul className="mt-3">
+          <li>
+            <Link to="/import" className={link}>
+              Import a car
+            </Link>
+          </li>
+        </ul>
+      </nav>
+
       {isSales && (
         <nav className="mt-8 border-t border-line pt-8">
           <p className={heading}>Staff</p>

@@ -99,6 +99,15 @@ function Layout() {
             </Link>
           )}
 
+          <Link
+            to="/import"
+            className={`hidden shrink-0 text-meta underline lg:block ${
+              overlay ? 'text-surface' : 'text-ink'
+            }`}
+          >
+            Import a car
+          </Link>
+
           {user && (
             <Link
               to="/my/orders"
