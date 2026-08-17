@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 
 /** Must match DEFAULT_PAGINATION PAGE_SIZE in the Django settings. The arrows
  *  are driven by the API's own next/previous, so if these ever drift the
@@ -26,6 +26,9 @@ function pageItems(current, total) {
 
 function Pagination({ count, hasNext, hasPrevious }) {
   const [searchParams] = useSearchParams()
+  // Stay on whatever page is doing the paginating. Hardcoding "/" made this
+  // storefront-only and sent the staff inventory table back to the shop.
+  const { pathname } = useLocation()
   const current = Math.max(1, Number(searchParams.get('page') ?? 1))
   const total = Math.ceil(count / PAGE_SIZE)
 
@@ -37,7 +40,7 @@ function Pagination({ count, hasNext, hasPrevious }) {
     if (page === 1) params.delete('page')
     else params.set('page', String(page))
     const query = params.toString()
-    return query ? `/?${query}` : '/'
+    return query ? `${pathname}?${query}` : pathname
   }
 
   const base =
