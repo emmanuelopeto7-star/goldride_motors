@@ -11,17 +11,23 @@ def money(**kwargs):
 class SourcedUnitSerializer(serializers.ModelSerializer):
     """What the customer sees when choosing.
 
-    The breakdown stops at C&F. Landing charges and our commission are shown
-    as one figure each, and the purchase price in Japan is not shown at all -
-    a quote is a price, not an invitation to audit the margin. Staff get the
-    full picture through StaffSourcedUnitSerializer.
+    Every KRA charge is itemised, because a customer comparing importers is
+    really comparing tax arithmetic, and a single "duties" figure is the one
+    line they cannot check. What stays hidden is the purchase price in Japan
+    and the landed cost: a quote is a price, not an invitation to audit the
+    margin. Staff get those through StaffSourcedUnitSerializer.
     """
 
     cnf_kes = money()
-    total_kes = money()
-    duty_kes = money()
+    taxes_kes = money()
+    import_duty_kes = money()
+    excise_duty_kes = money()
+    vat_kes = money()
+    idf_kes = money()
+    rdl_kes = money()
     clearing_kes = money()
     service_fee_kes = money()
+    total_kes = money()
 
     class Meta:
         model = SourcedUnit
@@ -29,8 +35,10 @@ class SourcedUnitSerializer(serializers.ModelSerializer):
             "id", "make", "model", "year", "mileage_km", "grade",
             "exterior_colour", "chassis_number", "auction_sheet_url", "photo",
             "dollar_rate",
-            "cnf_kes", "duty_kes", "clearing_kes", "service_fee_kes",
-            "total_kes",
+            "cnf_kes",
+            "import_duty_kes", "excise_duty_kes", "vat_kes", "idf_kes",
+            "rdl_kes", "taxes_kes",
+            "clearing_kes", "service_fee_kes", "total_kes",
             "status", "rejected_reason", "created_at",
         ]
         read_only_fields = fields

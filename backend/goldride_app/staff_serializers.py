@@ -166,6 +166,13 @@ class StaffSourcedUnitSerializer(serializers.ModelSerializer):
     total_kes = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True
     )
+    import_duty_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    excise_duty_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    vat_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    idf_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    rdl_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    taxes_kes = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    stock_price_preview = serializers.SerializerMethodField()
 
     class Meta:
         model = SourcedUnit
@@ -174,14 +181,25 @@ class StaffSourcedUnitSerializer(serializers.ModelSerializer):
             "make", "model", "year", "chassis_number", "mileage_km", "grade",
             "exterior_colour", "auction_sheet_url", "photo",
             "unit_price_usd", "freight_usd", "insurance_usd", "dollar_rate",
-            "duty_kes", "clearing_kes", "service_fee_kes",
+            "excise_rate", "customs_value_kes",
+            "clearing_kes", "service_fee_kes",
+            "import_duty_kes", "excise_duty_kes", "vat_kes", "idf_kes", "rdl_kes", "taxes_kes",
             "cnf_usd", "cif_usd", "cnf_kes", "cif_kes",
             "landed_cost_kes", "total_kes",
             "status", "rejected_reason", "created_at",
+            "pushed_to_car", "pushed_at", "stock_price_preview",
         ]
         # Selection runs through the customer's own endpoint so that choosing
-        # one unit always rejects its siblings.
-        read_only_fields = ["status", "rejected_reason", "created_at"]
+        # one unit always rejects its siblings; pushing runs through its own
+        # so the conversion can refuse a duplicate chassis.
+        read_only_fields = [
+            "status", "rejected_reason", "created_at", "pushed_to_car",
+            "pushed_at",
+        ]
+
+    def get_stock_price_preview(self, unit):
+        """What it would list at, before anyone commits to converting it."""
+        return unit.stock_price()
 
 
 class StaffImportRequestSerializer(serializers.ModelSerializer):

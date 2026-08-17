@@ -56,11 +56,11 @@ admin.site.register(ImportOrder, ImportOrderAdmin)
 class SourcedUnitInline(admin.TabularInline):
     model = SourcedUnit
     extra = 1
-    readonly_fields = ["landed_cost_kes", "total_kes", "created_at"]
+    readonly_fields = ["landed_cost_kes", "total_kes", "pushed_to_car", "created_at"]
     fields = [
         "make", "model", "year", "chassis_number", "grade",
         "unit_price_usd", "freight_usd", "insurance_usd", "dollar_rate",
-        "duty_kes", "clearing_kes", "service_fee_kes",
+        "excise_rate", "clearing_kes", "service_fee_kes",
         "landed_cost_kes", "total_kes", "status",
     ]
 
@@ -81,3 +81,36 @@ class ImportRequestAdmin(admin.ModelAdmin):
 
 
 admin.site.register(ImportRequest, ImportRequestAdmin)
+
+
+class SourcedUnitAdmin(admin.ModelAdmin):
+    list_display = [
+        "__str__", "request", "total_kes", "status", "pushed_to_car",
+        "created_at",
+    ]
+    list_filter = ["status", "make"]
+    search_fields = ["make", "model", "chassis_number"]
+    readonly_fields = [
+        "cnf_usd", "cif_usd", "cnf_kes", "cif_kes",
+        "import_duty_kes", "excise_duty_kes", "vat_kes", "idf_kes", "rdl_kes",
+        "taxes_kes", "landed_cost_kes",
+        "total_kes", "pushed_to_car", "pushed_at", "created_at",
+    ]
+    actions = ["push_selected_to_stock"]
+
+    @admin.action(description="Push to stock as a local listing")
+    def push_selected_to_stock(self, request, queryset):
+        listed, refused = 0, []
+        for unit in queryset:
+            car, detail = unit.push_to_stock()
+            if car is None:
+                refused.append(f"{unit}: {detail}")
+            else:
+                listed += 1
+
+        self.message_user(request, f"Listed {listed} unit(s).")
+        for problem in refused:
+            self.message_user(request, problem, level="WARNING")
+
+
+admin.site.register(SourcedUnit, SourcedUnitAdmin)
