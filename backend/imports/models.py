@@ -1,9 +1,10 @@
 from django.db import models
 import uuid
-from decimal import Decimal
+from decimal import ROUND_UP, Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -124,10 +125,25 @@ class SourcedUnit(models.Model):
         decimal_places=2,
         help_text="KES per USD, as quoted. Pinned so an old quote still reads.",
     )
-    # Entered rather than computed: KRA assesses duty on its own CRSP
-    # valuation depreciated by age, not on what we paid, so there is no
-    # formula here that would be honest.
-    duty_kes = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Excise is the only rate that varies per vehicle - it is banded by engine
+    # capacity - so it sits on the row while the rest live in settings.
+    excise_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("25.00"),
+        help_text="Percent. Banded by engine capacity.",
+    )
+    # KRA assesses on its own CRSP valuation depreciated by age, not on what
+    # we paid. Enter that figure once it is known and every charge is worked
+    # out from it instead; blank falls back to CIF, which is the right
+    # estimate before an entry has been lodged.
+    customs_value_kes = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="KRA's assessed value. Blank uses CIF.",
+    )
     clearing_kes = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -148,6 +164,17 @@ class SourcedUnit(models.Model):
     )
     rejected_reason = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # The flywheel. A rejected unit has already been found, graded and costed;
+    # this is where that work stops being wasted.
+    pushed_to_car = models.OneToOneField(
+        Car,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sourced_from",
+    )
+    pushed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at"]
@@ -184,10 +211,56 @@ class SourcedUnit(models.Model):
     def cif_kes(self):
         return self.cif_usd * self.dollar_rate
 
+    # --- KRA's charges ---------------------------------------------------
+    # Each one compounds on the last, which is why they are separate
+    # properties rather than one summed rate: excise is charged on CIF plus
+    # duty, and VAT on CIF plus duty plus excise. Applying 25 + 25 + 16 to CIF
+    # would understate the bill by a wide margin.
+
+    @property
+    def customs_value(self):
+        """What the charges are assessed on. CIF until KRA says otherwise."""
+        return self.customs_value_kes or self.cif_kes
+
+    @property
+    def import_duty_kes(self):
+        return self.customs_value * settings.IMPORT_DUTY_RATE / Decimal("100")
+
+    @property
+    def excise_duty_kes(self):
+        return (
+            (self.customs_value + self.import_duty_kes)
+            * self.excise_rate
+            / Decimal("100")
+        )
+
+    @property
+    def vat_kes(self):
+        base = self.customs_value + self.import_duty_kes + self.excise_duty_kes
+        return base * settings.IMPORT_VAT_RATE / Decimal("100")
+
+    @property
+    def idf_kes(self):
+        return self.customs_value * settings.IMPORT_IDF_RATE / Decimal("100")
+
+    @property
+    def rdl_kes(self):
+        return self.customs_value * settings.IMPORT_RDL_RATE / Decimal("100")
+
+    @property
+    def taxes_kes(self):
+        return (
+            self.import_duty_kes
+            + self.excise_duty_kes
+            + self.vat_kes
+            + self.idf_kes
+            + self.rdl_kes
+        )
+
     @property
     def landed_cost_kes(self):
         """What the unit costs us, delivered and cleared. Not a price."""
-        return self.cif_kes + self.duty_kes + self.clearing_kes
+        return self.cif_kes + self.taxes_kes + self.clearing_kes
 
     @property
     def total_kes(self):
@@ -219,6 +292,84 @@ class SourcedUnit(models.Model):
         self.rejected_reason = reason[:200]
         self.save(update_fields=["status", "rejected_reason"])
         return True, "rejected"
+
+    def stock_price(self, markup_percent=None):
+        """Landed cost plus margin, rounded to the nearest thousand shillings.
+
+        Deliberately built from `landed_cost_kes` and not `total_kes`: the
+        quote already carried a commission for the customer who walked away,
+        and charging that twice prices the car out of its own market.
+        """
+        if markup_percent is None:
+            markup_percent = settings.PUSH_TO_STOCK_MARKUP_PERCENT
+        markup_percent = Decimal(markup_percent)
+
+        raw = self.landed_cost_kes * (Decimal("1") + markup_percent / Decimal("100"))
+        # Nobody lists a car at 3,041,732. Round up so the margin is never
+        # eroded by the rounding itself.
+        thousand = Decimal("1000")
+        return (raw / thousand).quantize(Decimal("1"), rounding=ROUND_UP) * thousand
+
+    def push_to_stock(self, markup_percent=None, condition="used"):
+        """Turn a unit nobody took into a listing.
+
+        Refuses a unit that was selected - that one is going to the customer
+        who chose it - and refuses to run twice, because the second run would
+        create a duplicate listing for a car that physically exists once.
+        """
+        if self.pushed_to_car_id:
+            return None, "this unit is already listed"
+        if self.status == "selected":
+            return None, "a selected unit belongs to its customer"
+
+        chassis = (self.chassis_number or "").strip().upper()
+        if chassis and Car.objects.filter(vin=chassis).exists():
+            return None, "a listing already exists with that chassis number"
+
+        car = Car(
+            make=self.make,
+            model=self.model,
+            year=self.year,
+            price=self.stock_price(markup_percent),
+            condition=condition,
+            availability="available",
+            description=self.stock_description(),
+            mileage_km=self.mileage_km,
+            exterior_colour=self.exterior_colour,
+            # Only if it fits the column; the reference keeps the full string
+            # either way so the unit can always be traced back.
+            vin=chassis if len(chassis) <= 17 else "",
+            reference=chassis[:40],
+        )
+        if self.photo:
+            # Copied rather than shared: deleting the sourcing record later
+            # must not blank the listing's photograph.
+            car.image.save(
+                self.photo.name.rsplit("/", 1)[-1],
+                ContentFile(self.photo.read()),
+                save=False,
+            )
+        car.save()
+
+        self.pushed_to_car = car
+        self.pushed_at = timezone.now()
+        self.save(update_fields=["pushed_to_car", "pushed_at"])
+        return car, "listed"
+
+    def stock_description(self):
+        """A truthful starting point. Staff rewrite it before it sells."""
+        parts = [f"Imported {self.year} {self.make} {self.model}."]
+        if self.grade:
+            parts.append(f"Auction grade {self.grade}.")
+        if self.mileage_km:
+            parts.append(f"{self.mileage_km:,} km.")
+        if self.exterior_colour:
+            parts.append(f"Finished in {self.exterior_colour}.")
+        parts.append(
+            "Sourced for an import order and now available from stock. "
+            "Contact us for the auction sheet and full condition report."
+        )
+        return " ".join(parts)
 
     def __str__(self):
         return f"{self.year} {self.make} {self.model} ({self.get_status_display()})"
