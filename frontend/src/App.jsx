@@ -15,7 +15,10 @@ import MySaved from './pages/MySaved'
 import NotFound from './pages/NotFound'
 import TrackOrder from './pages/TrackOrder'
 import StaffApprovals from './pages/staff/StaffApprovals'
+import StaffInventory from './pages/staff/StaffInventory'
 import StaffLayout from './pages/staff/StaffLayout'
+import StaffSourcing from './pages/staff/StaffSourcing'
+import StaffSourcingDetail from './pages/staff/StaffSourcingDetail'
 
 function App() {
   return (
@@ -33,6 +36,9 @@ function App() {
       >
         <Route index element={<Navigate to="/staff/approvals" replace />} />
         <Route path="approvals" element={<StaffApprovals />} />
+        <Route path="sourcing" element={<StaffSourcing />} />
+        <Route path="sourcing/:id" element={<StaffSourcingDetail />} />
+        <Route path="inventory" element={<StaffInventory />} />
       </Route>
 
       <Route element={<Layout />}>

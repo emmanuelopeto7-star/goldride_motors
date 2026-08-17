@@ -13,7 +13,11 @@ import { useAuth } from '../../context/AuthContext'
  *  does not exist" applies just as much to a nav item pointing at nothing.
  */
 
-const TABS = [['/staff/approvals', 'Approvals']]
+const TABS = [
+  ['/staff/approvals', 'Approvals'],
+  ['/staff/sourcing', 'Sourcing'],
+  ['/staff/inventory', 'Inventory'],
+]
 
 function StaffLayout() {
   const { user, isManager, signOut } = useAuth()
