@@ -25,6 +25,9 @@ class Payment(models.Model):
     checkout_request_id = models.CharField(max_length=100, blank=True)
     paystack_ref = models.CharField(max_length=100, blank=True)
     checkout_url = models.URLField(max_length=300, blank=True)
+    # When the customer was told how to pay. Blank means they have not been,
+    # which is the difference between "waiting on them" and "waiting on us".
+    checkout_sent_at = models.DateTimeField(null=True, blank=True)
     note = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
