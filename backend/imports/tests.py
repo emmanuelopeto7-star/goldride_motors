@@ -7,15 +7,19 @@ an offer against one.
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core import mail
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.test import TestCase
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from cars.models import Car
 
-from .models import ImportOrder
+from .models import ImportOrder, ImportRequest, SourcedUnit
 
 
 def make_car(model="Prado", availability="available"):
@@ -300,3 +304,341 @@ class OrderCancellationTests(APITestCase):
         response = self.client.get(f"/api/track/{self.order.token}/")
 
         self.assertNotIn("cancel_reason", response.data)
+
+
+def a_request(**overrides):
+    fields = {
+        "contact_name": "Amina Otieno",
+        "email": "amina@example.com",
+        "phone": "+254700111222",
+        "make": "Toyota",
+        "model": "Prado",
+        "year": timezone.now().year - 5,
+    }
+    fields.update(overrides)
+    return ImportRequest.objects.create(**fields)
+
+
+def a_unit(request=None, **overrides):
+    """A plausible Japanese import: USD 12,000 FOB, 1,500 freight, rate 130."""
+    fields = {
+        "request": request or a_request(),
+        "make": "Toyota",
+        "model": "Prado",
+        "year": timezone.now().year - 5,
+        "unit_price_usd": Decimal("12000.00"),
+        "freight_usd": Decimal("1500.00"),
+        "insurance_usd": Decimal("500.00"),
+        "dollar_rate": Decimal("130.00"),
+        "duty_kes": Decimal("900000.00"),
+        "clearing_kes": Decimal("120000.00"),
+        "service_fee_kes": Decimal("200000.00"),
+    }
+    fields.update(overrides)
+    return SourcedUnit.objects.create(**fields)
+
+
+class LandingCostTests(TestCase):
+    """The arithmetic staff quote from. Wrong here means quoting at a loss."""
+
+    def test_cnf_is_the_car_plus_freight(self):
+        unit = a_unit()
+
+        self.assertEqual(unit.cnf_usd, Decimal("13500.00"))
+
+    def test_cif_adds_insurance_on_top_of_cnf(self):
+        unit = a_unit()
+
+        self.assertEqual(unit.cif_usd, Decimal("14000.00"))
+
+    def test_the_dollar_rate_converts_the_whole_cnf(self):
+        unit = a_unit()
+
+        self.assertEqual(unit.cnf_kes, Decimal("1755000.00"))
+
+    def test_landed_cost_is_cif_plus_duty_and_clearing(self):
+        unit = a_unit()
+
+        # 14,000 x 130 = 1,820,000 + 900,000 + 120,000
+        self.assertEqual(unit.landed_cost_kes, Decimal("2840000.00"))
+
+    def test_the_customer_total_adds_our_commission(self):
+        """Without the fee the total is our cost - a zero-margin quote."""
+        unit = a_unit()
+
+        self.assertEqual(unit.total_kes, Decimal("3040000.00"))
+        self.assertEqual(unit.total_kes - unit.landed_cost_kes, Decimal("200000.00"))
+
+    def test_a_pinned_rate_survives_the_rate_moving(self):
+        """The reason the rate is a column and not a setting."""
+        unit = a_unit(dollar_rate=Decimal("129.00"))
+        quoted = unit.total_kes
+
+        a_unit(request=unit.request, dollar_rate=Decimal("138.00"))
+        unit.refresh_from_db()
+
+        self.assertEqual(unit.total_kes, quoted)
+
+    def test_a_unit_with_no_extras_still_totals(self):
+        unit = a_unit(
+            freight_usd=Decimal("0"),
+            insurance_usd=Decimal("0"),
+            duty_kes=Decimal("0"),
+            clearing_kes=Decimal("0"),
+            service_fee_kes=Decimal("0"),
+        )
+
+        self.assertEqual(unit.total_kes, Decimal("1560000.00"))
+
+
+class ImportEligibilityTests(TestCase):
+    """KEBS will not clear a vehicle 8 or more years old. Refusing at the
+    quote stage costs nothing; finding out at Mombasa costs the unit."""
+
+    def a_pending_request(self, year):
+        return ImportRequest(
+            contact_name="A",
+            email="a@example.com",
+            phone="+254700000000",
+            make="Toyota",
+            model="Prado",
+            year=year,
+        )
+
+    def test_a_recent_year_is_accepted(self):
+        self.a_pending_request(timezone.now().year - 3).full_clean()
+
+    def test_the_oldest_permitted_year_is_accepted(self):
+        """The boundary is the whole rule - off by one here is lost business."""
+        oldest = timezone.now().year - settings.IMPORT_MAX_VEHICLE_AGE_YEARS
+
+        self.a_pending_request(oldest).full_clean()
+
+    def test_a_year_too_old_is_refused(self):
+        oldest = timezone.now().year - settings.IMPORT_MAX_VEHICLE_AGE_YEARS
+
+        with self.assertRaises(DjangoValidationError):
+            self.a_pending_request(oldest - 1).full_clean()
+
+    def test_a_future_year_is_refused(self):
+        with self.assertRaises(DjangoValidationError):
+            self.a_pending_request(timezone.now().year + 2).full_clean()
+
+    def test_the_rule_applies_to_sourced_units_too(self):
+        """A request can be in range while the unit found against it is not."""
+        unit = SourcedUnit(
+            request=a_request(),
+            make="Toyota",
+            model="Prado",
+            year=timezone.now().year - settings.IMPORT_MAX_VEHICLE_AGE_YEARS - 1,
+            unit_price_usd=Decimal("9000"),
+            dollar_rate=Decimal("130"),
+        )
+
+        with self.assertRaises(DjangoValidationError):
+            unit.full_clean()
+
+
+class UnitSelectionTests(APITestCase):
+    def setUp(self):
+        self.request = a_request()
+        self.first = a_unit(request=self.request)
+        self.second = a_unit(request=self.request, unit_price_usd=Decimal("15000"))
+
+    def url(self, unit):
+        return f"/api/imports/requests/{self.request.token}/units/{unit.pk}/decide/"
+
+    def test_choosing_one_rejects_the_others(self):
+        """Choosing is also declining. Leaving siblings on offer would let the
+        customer select twice."""
+        response = self.client.post(self.url(self.first), {"decision": "select"})
+
+        self.assertEqual(response.status_code, 200)
+        self.first.refresh_from_db()
+        self.second.refresh_from_db()
+        self.assertEqual(self.first.status, "selected")
+        self.assertEqual(self.second.status, "rejected")
+
+    def test_selecting_moves_the_request_to_agreed(self):
+        self.client.post(self.url(self.first), {"decision": "select"})
+
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "agreed")
+
+    def test_a_second_selection_is_refused(self):
+        self.client.post(self.url(self.first), {"decision": "select"})
+
+        response = self.client.post(self.url(self.second), {"decision": "select"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_rejecting_one_leaves_the_others_alone(self):
+        response = self.client.post(
+            self.url(self.first),
+            {"decision": "reject", "reason": "Too many miles"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.second.refresh_from_db()
+        self.assertEqual(self.second.status, "offered")
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.rejected_reason, "Too many miles")
+
+    def test_a_selected_unit_cannot_then_be_rejected(self):
+        self.client.post(self.url(self.first), {"decision": "select"})
+
+        response = self.client.post(self.url(self.first), {"decision": "reject"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_unit_from_another_request_is_not_reachable(self):
+        """The token is the credential, so it has to actually be checked."""
+        other = a_unit()
+        url = f"/api/imports/requests/{self.request.token}/units/{other.pk}/decide/"
+
+        response = self.client.post(url, {"decision": "select"})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_nonsense_decisions_are_refused(self):
+        response = self.client.post(self.url(self.first), {"decision": "maybe"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_the_customer_is_not_shown_what_we_paid(self):
+        """A quote is a price, not an invitation to audit the margin."""
+        response = self.client.get(f"/api/imports/requests/{self.request.token}/")
+
+        unit = response.data["units"][0]
+        self.assertNotIn("unit_price_usd", unit)
+        self.assertNotIn("landed_cost_kes", unit)
+        self.assertIn("total_kes", unit)
+
+
+class ImportRequestFlowTests(APITestCase):
+    URL = "/api/imports/requests/"
+
+    def payload(self, **overrides):
+        fields = {
+            "contact_name": "Amina Otieno",
+            "email": "amina@example.com",
+            "phone": "+254700111222",
+            "make": "Toyota",
+            "model": "Prado",
+            "year": timezone.now().year - 5,
+        }
+        fields.update(overrides)
+        return fields
+
+    def test_a_guest_can_raise_a_request(self):
+        """A registration wall in front of a lead loses the lead."""
+        response = self.client.post(self.URL, self.payload())
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(ImportRequest.objects.get().customer)
+
+    def test_the_response_carries_the_token_to_come_back_with(self):
+        response = self.client.post(self.URL, self.payload())
+
+        self.assertTrue(response.data["token"])
+
+    def test_an_ineligible_year_is_refused_at_submission(self):
+        too_old = timezone.now().year - settings.IMPORT_MAX_VEHICLE_AGE_YEARS - 1
+
+        response = self.client.post(self.URL, self.payload(year=too_old))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("year", response.data)
+
+    def test_both_the_customer_and_sales_are_emailed(self):
+        mail.outbox.clear()
+
+        self.client.post(self.URL, self.payload())
+
+        recipients = [m.to[0] for m in mail.outbox]
+        self.assertIn("amina@example.com", recipients)
+        self.assertIn("sales@goldridemotors.co.ke", recipients)
+
+    def test_a_signed_in_customer_is_attached_to_the_request(self):
+        User = get_user_model()
+        user = User.objects.create_user("amina", "amina@example.com", "pw")
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        self.client.post(self.URL, self.payload())
+
+        self.assertEqual(ImportRequest.objects.get().customer, user)
+
+    def test_tracking_is_public_and_shows_the_units(self):
+        request = a_request()
+        a_unit(request=request)
+
+        response = self.client.get(f"/api/imports/requests/{request.token}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["units"]), 1)
+
+
+class StaffSourcingTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+        user = User.objects.create_user("sourcer", "s@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.request = a_request()
+
+    def test_adding_the_first_unit_moves_the_request_to_sourcing(self):
+        """The status should follow from the work, not need remembering."""
+        response = self.client.post("/api/staff/sourced-units/", {
+            "request": self.request.pk,
+            "make": "Toyota",
+            "model": "Prado",
+            "year": timezone.now().year - 4,
+            "unit_price_usd": "12000.00",
+            "dollar_rate": "130.00",
+        })
+
+        self.assertEqual(response.status_code, 201)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "sourcing")
+
+    def test_staff_see_the_whole_waterfall(self):
+        a_unit(request=self.request)
+
+        response = self.client.get("/api/staff/sourced-units/")
+
+        unit = response.data["results"][0]
+        for field in ("cnf_usd", "cif_usd", "cnf_kes", "landed_cost_kes", "total_kes"):
+            self.assertIn(field, unit)
+
+    def test_notifying_hands_the_choice_to_the_customer(self):
+        a_unit(request=self.request)
+        mail.outbox.clear()
+
+        response = self.client.post(
+            f"/api/staff/import-requests/{self.request.pk}/notify/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "awaiting_selection")
+        self.assertEqual(mail.outbox[0].to, ["amina@example.com"])
+
+    def test_notifying_with_nothing_on_offer_is_refused(self):
+        """An email promising options that do not exist is worse than none."""
+        response = self.client.post(
+            f"/api/staff/import-requests/{self.request.pk}/notify/"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "pending")
+
+    def test_sourcing_requires_staff(self):
+        self.client.credentials()
+
+        response = self.client.get("/api/staff/sourced-units/")
+
+        self.assertIn(response.status_code, (401, 403))
