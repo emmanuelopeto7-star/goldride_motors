@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ImportOrder, ImportMilestone
+from .models import ImportMilestone, ImportOrder, ImportRequest, SourcedUnit
 
 from payments.models import Payment
 
@@ -52,3 +52,32 @@ class ImportOrderAdmin(admin.ModelAdmin):
     
 
 admin.site.register(ImportOrder, ImportOrderAdmin)    
+
+class SourcedUnitInline(admin.TabularInline):
+    model = SourcedUnit
+    extra = 1
+    readonly_fields = ["landed_cost_kes", "total_kes", "created_at"]
+    fields = [
+        "make", "model", "year", "chassis_number", "grade",
+        "unit_price_usd", "freight_usd", "insurance_usd", "dollar_rate",
+        "duty_kes", "clearing_kes", "service_fee_kes",
+        "landed_cost_kes", "total_kes", "status",
+    ]
+
+
+class ImportRequestAdmin(admin.ModelAdmin):
+    list_display = [
+        "contact_name", "make", "model", "year", "status", "unit_count",
+        "created_at",
+    ]
+    list_filter = ["status", "make"]
+    search_fields = ["contact_name", "email", "phone", "make", "model"]
+    readonly_fields = ["token", "created_at"]
+    inlines = [SourcedUnitInline]
+
+    @admin.display(description="Units")
+    def unit_count(self, obj):
+        return obj.units.count()
+
+
+admin.site.register(ImportRequest, ImportRequestAdmin)
