@@ -5,6 +5,7 @@ them back - there was no cancelled state at all, and no way for staff to make
 an offer against one.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -25,7 +26,7 @@ from cars.models import Car
 # Uploads in tests must not land in the real media folder.
 MEDIA_OVERRIDE = override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 
-from .models import ImportOrder, ImportRequest, SourcedUnit
+from .models import ImportOrder, ImportRates, ImportRequest, SourcedUnit
 
 
 def make_car(model="Prado", availability="available"):
@@ -892,3 +893,109 @@ class PushToStockTests(APITestCase):
 
         unit = response.data["results"][0]
         self.assertIn("stock_price_preview", unit)
+
+
+class PinnedRateTests(TestCase):
+    """Rates became editable, which introduces the risk they were editable to
+    avoid: a quote silently changing after it was sent."""
+
+    def test_a_new_unit_takes_the_rates_in_force(self):
+        ImportRates.objects.create(
+            duty_rate=Decimal("30"), excise_rate=Decimal("35"),
+            vat_rate=Decimal("18"), idf_rate=Decimal("3"),
+            rdl_rate=Decimal("1.5"), stock_markup=Decimal("20"),
+        )
+
+        unit = a_unit(excise_rate=None)
+
+        self.assertEqual(unit.duty_rate, Decimal("30"))
+        self.assertEqual(unit.vat_rate, Decimal("18"))
+        self.assertEqual(unit.excise_rate, Decimal("35"))
+
+    def test_an_old_quote_does_not_move_when_the_rates_do(self):
+        """The whole reason the rates are copied onto the row."""
+        unit = a_unit()
+        quoted = unit.total_kes
+
+        ImportRates.objects.create(
+            duty_rate=Decimal("40"), excise_rate=Decimal("40"),
+            vat_rate=Decimal("20"), idf_rate=Decimal("5"),
+            rdl_rate=Decimal("4"), effective_from=timezone.now().date(),
+        )
+        unit.refresh_from_db()
+
+        self.assertEqual(unit.total_kes, quoted)
+
+    def test_editing_a_unit_does_not_re_rate_it(self):
+        unit = a_unit()
+        quoted = unit.total_kes
+        ImportRates.objects.create(duty_rate=Decimal("40"))
+
+        unit.clearing_kes = unit.clearing_kes
+        unit.save()
+
+        self.assertEqual(unit.total_kes, quoted)
+
+    def test_an_excise_band_set_by_hand_is_not_overwritten(self):
+        ImportRates.objects.create(excise_rate=Decimal("25"))
+
+        unit = a_unit(excise_rate=Decimal("35"))
+
+        self.assertEqual(unit.excise_rate, Decimal("35"))
+
+    def test_rates_fall_back_to_settings_when_the_table_is_empty(self):
+        """The migration seeds a row, so this is the belt-and-braces path -
+        a database restored without it must still quote rather than crash."""
+        ImportRates.objects.all().delete()
+
+        rates = ImportRates.current()
+
+        self.assertEqual(rates.duty_rate, settings.IMPORT_DUTY_RATE)
+        self.assertIsNone(rates.pk)
+
+    def test_the_migration_leaves_a_row_to_edit(self):
+        """An empty table and an invisible settings fallback is a bad first
+        experience for whoever has to change a rate."""
+        self.assertTrue(ImportRates.objects.exists())
+
+    def test_future_dated_rates_are_not_used_yet(self):
+        """Budget changes are announced before they take effect."""
+        ImportRates.objects.create(
+            duty_rate=Decimal("30"),
+            effective_from=timezone.now().date() + timedelta(days=30),
+        )
+
+        self.assertEqual(ImportRates.current().duty_rate, settings.IMPORT_DUTY_RATE)
+
+    def test_the_stock_markup_comes_from_the_table_too(self):
+        ImportRates.objects.create(stock_markup=Decimal("30"))
+        unit = a_unit()
+
+        # landed 3,518,850 x 1.30 = 4,574,505, rounded up
+        self.assertEqual(unit.stock_price(), Decimal("4575000"))
+
+
+class ImportRatesEndpointTests(APITestCase):
+    def as_sales(self):
+        User = get_user_model()
+        user = User.objects.create_user("rates", "r@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_staff_are_served_the_live_rates(self):
+        """The sourcing screen previews totals with these, so a stale copy
+        baked into the JS bundle would quote the wrong number."""
+        ImportRates.objects.create(duty_rate=Decimal("30"), vat_rate=Decimal("18"))
+        self.as_sales()
+
+        response = self.client.get("/api/staff/import-rates/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Decimal(response.data["duty"]), Decimal("30"))
+        self.assertEqual(Decimal(response.data["vat"]), Decimal("18"))
+
+    def test_the_rates_are_not_public(self):
+        response = self.client.get("/api/staff/import-rates/")
+
+        self.assertIn(response.status_code, (401, 403))
