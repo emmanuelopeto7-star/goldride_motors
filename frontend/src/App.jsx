@@ -3,6 +3,8 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AccountLayout from './pages/AccountLayout'
 import Home from './pages/Home'
+import ImportRequest from './pages/ImportRequest'
+import ImportTracking from './pages/ImportTracking'
 import CarDetail from './pages/CarDetail'
 import LinkedInCallback from './pages/LinkedInCallback'
 import MyEnquiries from './pages/MyEnquiries'
@@ -39,6 +41,8 @@ function App() {
         <Route path="/auth/linkedin/callback" element={<LinkedInCallback />} />
         {/* Public: the UUID is the credential, so no guard here. */}
         <Route path="/track/:token" element={<TrackOrder />} />
+        <Route path="/import" element={<ImportRequest />} />
+        <Route path="/imports/:token" element={<ImportTracking />} />
 
         {/* One guard for the whole account area, one shell for its tabs. */}
         <Route
