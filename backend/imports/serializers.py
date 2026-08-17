@@ -1,5 +1,55 @@
 from rest_framework import serializers
-from .models import ImportOrder, ImportMilestone
+from .models import ImportMilestone, ImportOrder, ImportRequest, SourcedUnit
+
+
+def money(**kwargs):
+    return serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True, **kwargs
+    )
+
+
+class SourcedUnitSerializer(serializers.ModelSerializer):
+    """What the customer sees when choosing.
+
+    The breakdown stops at C&F. Landing charges and our commission are shown
+    as one figure each, and the purchase price in Japan is not shown at all -
+    a quote is a price, not an invitation to audit the margin. Staff get the
+    full picture through StaffSourcedUnitSerializer.
+    """
+
+    cnf_kes = money()
+    total_kes = money()
+    duty_kes = money()
+    clearing_kes = money()
+    service_fee_kes = money()
+
+    class Meta:
+        model = SourcedUnit
+        fields = [
+            "id", "make", "model", "year", "mileage_km", "grade",
+            "exterior_colour", "chassis_number", "auction_sheet_url", "photo",
+            "dollar_rate",
+            "cnf_kes", "duty_kes", "clearing_kes", "service_fee_kes",
+            "total_kes",
+            "status", "rejected_reason", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class ImportRequestSerializer(serializers.ModelSerializer):
+    """Raising a request. Open to guests, so the contact fields are required
+    here rather than read off an account that may not exist."""
+
+    units = SourcedUnitSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ImportRequest
+        fields = [
+            "id", "contact_name", "email", "phone",
+            "make", "model", "year", "budget_kes", "notes",
+            "status", "token", "created_at", "units",
+        ]
+        read_only_fields = ["id", "status", "token", "created_at", "units"]
 
 class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:

@@ -36,7 +36,13 @@ from goldride_app.views import (
     VerifyEmailView,
 )
 from cars.views import FavouriteDestroyView, FavouriteView, HeroBannerView
-from imports.views import CancelOrderView, MyOrdersView
+from imports.views import (
+    CancelOrderView,
+    ImportRequestCreateView,
+    ImportRequestTrackingView,
+    MyOrdersView,
+    SourcedUnitDecisionView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -46,6 +52,12 @@ urlpatterns = [
     path('api/favourites/<int:car_id>/', FavouriteDestroyView.as_view()),
     path('api/inquiries/', include('inquiries.urls')),
     path('api/track/', include('imports.urls')),
+    path('api/imports/requests/', ImportRequestCreateView.as_view()),
+    path('api/imports/requests/<uuid:token>/', ImportRequestTrackingView.as_view()),
+    path(
+        'api/imports/requests/<uuid:token>/units/<int:pk>/decide/',
+        SourcedUnitDecisionView.as_view(),
+    ),
     path('api/auth/login/', obtain_auth_token),
     path('api/auth/login/email/', EmailLoginView.as_view()),
     path('api/auth/logout/', LogoutView.as_view()),
