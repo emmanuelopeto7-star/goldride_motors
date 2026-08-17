@@ -12,12 +12,18 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core import mail
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+import tempfile
+
 from cars.models import Car
+
+# Uploads in tests must not land in the real media folder.
+MEDIA_OVERRIDE = override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 
 from .models import ImportOrder, ImportRequest, SourcedUnit
 
@@ -330,7 +336,6 @@ def a_unit(request=None, **overrides):
         "freight_usd": Decimal("1500.00"),
         "insurance_usd": Decimal("500.00"),
         "dollar_rate": Decimal("130.00"),
-        "duty_kes": Decimal("900000.00"),
         "clearing_kes": Decimal("120000.00"),
         "service_fee_kes": Decimal("200000.00"),
     }
@@ -356,17 +361,57 @@ class LandingCostTests(TestCase):
 
         self.assertEqual(unit.cnf_kes, Decimal("1755000.00"))
 
-    def test_landed_cost_is_cif_plus_duty_and_clearing(self):
+    def test_each_kra_charge_is_worked_out_in_order(self):
+        """They compound: excise sits on CIF plus duty, VAT on all three.
+        Adding 25 + 25 + 16 to CIF would understate the bill badly."""
+        unit = a_unit()  # CIF 14,000 USD x 130 = 1,820,000
+
+        self.assertEqual(unit.import_duty_kes, Decimal("455000.00"))
+        self.assertEqual(unit.excise_duty_kes, Decimal("568750.00"))
+        self.assertEqual(unit.vat_kes, Decimal("455000.00"))
+        self.assertEqual(unit.idf_kes, Decimal("63700.00"))
+        self.assertEqual(unit.rdl_kes, Decimal("36400.00"))
+        self.assertEqual(unit.taxes_kes, Decimal("1578850.00"))
+
+    def test_compounding_is_not_the_same_as_summing_the_rates(self):
+        """The mistake this arithmetic exists to avoid."""
+        unit = a_unit()
+        naive = unit.cif_kes * Decimal("71.5") / Decimal("100")
+
+        self.assertGreater(unit.taxes_kes, naive)
+
+    def test_a_bigger_engine_pays_more_excise_and_more_vat(self):
+        """VAT sits on top of excise, so the band moves two figures, not one."""
+        small = a_unit(excise_rate=Decimal("20"))
+        large = a_unit(request=small.request, excise_rate=Decimal("35"))
+
+        self.assertGreater(large.excise_duty_kes, small.excise_duty_kes)
+        self.assertGreater(large.vat_kes, small.vat_kes)
+
+    def test_landed_cost_is_cif_plus_taxes_plus_clearing(self):
         unit = a_unit()
 
-        # 14,000 x 130 = 1,820,000 + 900,000 + 120,000
-        self.assertEqual(unit.landed_cost_kes, Decimal("2840000.00"))
+        # 1,820,000 + 1,578,850 + 120,000
+        self.assertEqual(unit.landed_cost_kes, Decimal("3518850.00"))
+
+    def test_charges_are_assessed_on_crsp_when_kra_has_valued_it(self):
+        """KRA assesses on its own depreciated valuation, not on what we paid.
+        CIF is the estimate until an entry is lodged."""
+        unit = a_unit(customs_value_kes=Decimal("2500000.00"))
+
+        self.assertEqual(unit.customs_value, Decimal("2500000.00"))
+        self.assertEqual(unit.import_duty_kes, Decimal("625000.00"))
+
+    def test_cif_is_the_basis_until_kra_says_otherwise(self):
+        unit = a_unit()
+
+        self.assertEqual(unit.customs_value, unit.cif_kes)
 
     def test_the_customer_total_adds_our_commission(self):
         """Without the fee the total is our cost - a zero-margin quote."""
         unit = a_unit()
 
-        self.assertEqual(unit.total_kes, Decimal("3040000.00"))
+        self.assertEqual(unit.total_kes, Decimal("3718850.00"))
         self.assertEqual(unit.total_kes - unit.landed_cost_kes, Decimal("200000.00"))
 
     def test_a_pinned_rate_survives_the_rate_moving(self):
@@ -379,16 +424,17 @@ class LandingCostTests(TestCase):
 
         self.assertEqual(unit.total_kes, quoted)
 
-    def test_a_unit_with_no_extras_still_totals(self):
+    def test_taxes_are_charged_even_with_no_other_extras(self):
+        """Freight and clearing are optional. KRA is not."""
         unit = a_unit(
             freight_usd=Decimal("0"),
             insurance_usd=Decimal("0"),
-            duty_kes=Decimal("0"),
             clearing_kes=Decimal("0"),
             service_fee_kes=Decimal("0"),
         )
 
-        self.assertEqual(unit.total_kes, Decimal("1560000.00"))
+        self.assertGreater(unit.total_kes, unit.cif_kes)
+        self.assertEqual(unit.total_kes, unit.cif_kes + unit.taxes_kes)
 
 
 class ImportEligibilityTests(TestCase):
@@ -642,3 +688,191 @@ class StaffSourcingTests(APITestCase):
         response = self.client.get("/api/staff/sourced-units/")
 
         self.assertIn(response.status_code, (401, 403))
+
+
+@MEDIA_OVERRIDE
+class PushToStockTests(APITestCase):
+    """Doc §4, the flywheel.
+
+    A rejected unit has already been found, graded and costed. Discarding it
+    throws away work that was paid for in staff time; converting it turns that
+    work into inventory.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+        user = User.objects.create_user("sourcer", "s@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        self.request = a_request()
+        self.unit = a_unit(
+            request=self.request,
+            chassis_number="TRJ150-0012345",
+            mileage_km=68000,
+            grade="4.5",
+            exterior_colour="Pearl White",
+        )
+        self.unit.reject("Wanted a different colour")
+
+    def url(self, unit=None):
+        return f"/api/staff/sourced-units/{(unit or self.unit).pk}/push-to-stock/"
+
+    # --- pricing ---------------------------------------------------------
+
+    def test_the_price_is_landed_cost_plus_the_default_markup(self):
+        # landed cost 3,518,850 x 1.15 = 4,046,677.50, rounded up
+        self.assertEqual(self.unit.stock_price(), Decimal("4047000"))
+
+    def test_pricing_ignores_the_commission_from_the_original_quote(self):
+        """Charging it twice prices the car out of its own market."""
+        priced_off_total = self.unit.total_kes * Decimal("1.15")
+
+        self.assertLess(self.unit.stock_price(), priced_off_total)
+
+    def test_a_markup_can_be_given_per_unit(self):
+        # 3,518,850 x 1.25 = 4,398,562.50, rounded up
+        self.assertEqual(self.unit.stock_price(Decimal("25")), Decimal("4399000"))
+
+    def test_the_price_is_rounded_up_to_a_round_thousand(self):
+        """Nobody lists a car at 3,041,732, and rounding down erodes margin."""
+        unit = a_unit(request=self.request, clearing_kes=Decimal("120333.00"))
+
+        price = unit.stock_price()
+
+        self.assertEqual(price % Decimal("1000"), 0)
+        self.assertGreaterEqual(price, unit.landed_cost_kes)
+
+    # --- the conversion --------------------------------------------------
+
+    def test_pushing_creates_an_available_listing(self):
+        response = self.client.post(self.url())
+
+        self.assertEqual(response.status_code, 201)
+        car = Car.objects.get(pk=response.data["id"])
+        self.assertEqual(car.availability, "available")
+        self.assertEqual(car.make, "Toyota")
+        self.assertEqual(car.year, self.unit.year)
+
+    def test_the_listing_carries_the_specs_that_were_known(self):
+        self.client.post(self.url())
+
+        car = Car.objects.get()
+        self.assertEqual(car.mileage_km, 68000)
+        self.assertEqual(car.exterior_colour, "Pearl White")
+
+    def test_the_chassis_becomes_the_listing_vin(self):
+        self.client.post(self.url())
+
+        self.assertEqual(Car.objects.get().vin, "TRJ150-0012345")
+
+    def test_a_chassis_too_long_for_the_vin_column_is_kept_as_a_reference(self):
+        """17 characters is a VIN. Japanese chassis numbers are not always one,
+        and losing the traceability would be worse than an empty vin."""
+        unit = a_unit(
+            request=self.request,
+            chassis_number="A-VERY-LONG-CHASSIS-NUMBER-9999",
+        )
+        unit.reject()
+
+        self.client.post(self.url(unit))
+
+        car = Car.objects.get()
+        self.assertEqual(car.vin, "")
+        self.assertIn("A-VERY-LONG-CHASSIS", car.reference)
+
+    def test_the_description_is_written_from_what_we_know(self):
+        self.client.post(self.url())
+
+        description = Car.objects.get().description
+        self.assertIn("Toyota", description)
+        self.assertIn("4.5", description)
+        self.assertIn("68,000 km", description)
+
+    def test_the_unit_records_where_it_went(self):
+        response = self.client.post(self.url())
+
+        self.unit.refresh_from_db()
+        self.assertEqual(self.unit.pushed_to_car_id, response.data["id"])
+        self.assertIsNotNone(self.unit.pushed_at)
+
+    def test_the_photo_is_copied_not_shared(self):
+        """Deleting the sourcing record must not blank the listing."""
+        unit = a_unit(request=self.request)
+        unit.photo = SimpleUploadedFile("unit.jpg", b"not-a-real-jpeg")
+        unit.save(update_fields=["photo"])
+        unit.reject()
+
+        self.client.post(self.url(unit))
+
+        car = Car.objects.get()
+        self.assertTrue(car.image)
+        self.assertNotEqual(car.image.name, unit.photo.name)
+
+    # --- the guards ------------------------------------------------------
+
+    def test_a_unit_cannot_be_pushed_twice(self):
+        """The car physically exists once."""
+        self.client.post(self.url())
+
+        response = self.client.post(self.url())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Car.objects.count(), 1)
+
+    def test_a_selected_unit_cannot_be_pushed(self):
+        """It belongs to the customer who chose it."""
+        unit = a_unit(request=a_request())
+        unit.select()
+
+        response = self.client.post(self.url(unit))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Car.objects.count(), 0)
+
+    def test_a_chassis_already_on_the_lot_is_refused(self):
+        """Exactly the duplicate the VIN constraint exists to prevent - and it
+        would otherwise surface as a 500 from the database."""
+        Car.objects.create(
+            make="Toyota", model="Prado", year=2020,
+            price=Decimal("3000000"), description="Already here.",
+            vin="TRJ150-0012345",
+        )
+
+        response = self.client.post(self.url())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("chassis", response.data["error"])
+
+    def test_a_negative_markup_is_refused(self):
+        response = self.client.post(self.url(), {"markup_percent": "-10"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_nonsense_markup_is_refused(self):
+        response = self.client.post(self.url(), {"markup_percent": "cheap"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_pushing_requires_staff(self):
+        self.client.credentials()
+
+        response = self.client.post(self.url())
+
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_the_new_listing_is_live_on_the_public_site(self):
+        """The whole point - it has to become sellable inventory."""
+        self.client.post(self.url())
+        self.client.credentials()
+
+        response = self.client.get("/api/cars/")
+
+        self.assertEqual(response.data["count"], 1)
+
+    def test_staff_can_preview_the_price_before_converting(self):
+        response = self.client.get("/api/staff/sourced-units/")
+
+        unit = response.data["results"][0]
+        self.assertIn("stock_price_preview", unit)
