@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import ImportMilestone, ImportOrder, ImportRequest, SourcedUnit
+from .models import (
+    ImportMilestone,
+    ImportOrder,
+    ImportRates,
+    ImportRequest,
+    SourcedUnit,
+)
 
 from payments.models import Payment
 
@@ -114,3 +120,21 @@ class SourcedUnitAdmin(admin.ModelAdmin):
 
 
 admin.site.register(SourcedUnit, SourcedUnitAdmin)
+
+
+class ImportRatesAdmin(admin.ModelAdmin):
+    """Rates change on budget day. The person who knows is rarely the person
+    who can push a release, so this is a table and not a settings block."""
+
+    list_display = [
+        "effective_from", "duty_rate", "excise_rate", "vat_rate", "idf_rate",
+        "rdl_rate", "stock_markup", "note",
+    ]
+    readonly_fields = ["created_at"]
+
+    def has_delete_permission(self, request, obj=None):
+        # Old rows are the record of what a quote was worked out under.
+        return False
+
+
+admin.site.register(ImportRates, ImportRatesAdmin)
