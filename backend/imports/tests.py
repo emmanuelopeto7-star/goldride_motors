@@ -551,6 +551,22 @@ class UnitSelectionTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_the_itemised_quote_adds_up_to_its_own_total(self):
+        """The one error a customer checking the arithmetic is guaranteed to
+        find. Leading with C&F instead of CIF leaves the lines short by the
+        insurance, which makes the whole breakdown look like a trick."""
+        response = self.client.get(f"/api/imports/requests/{self.request.token}/")
+
+        unit = response.data["units"][0]
+        lines = [
+            unit["cif_kes"], unit["import_duty_kes"], unit["excise_duty_kes"],
+            unit["vat_kes"], unit["idf_kes"], unit["rdl_kes"],
+            unit["clearing_kes"], unit["service_fee_kes"],
+        ]
+
+        self.assertEqual(sum(Decimal(line) for line in lines),
+                         Decimal(unit["total_kes"]))
+
     def test_the_customer_is_not_shown_what_we_paid(self):
         """A quote is a price, not an invitation to audit the margin."""
         response = self.client.get(f"/api/imports/requests/{self.request.token}/")
