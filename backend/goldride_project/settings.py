@@ -155,6 +155,7 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "inquiries": "5/hour",
+        "imports": "5/hour",
         "tracking": "20/hour",
         "payments": "10/hour",
         "purchases": "5/hour",
@@ -207,6 +208,15 @@ EMAIL_VERIFICATION_TIMEOUT = config(
 # privately months ago should not still be answering searches; making the
 # seller confirm it is still for sale is the cheapest way to find out.
 LISTING_LIFETIME_DAYS = config('LISTING_LIFETIME_DAYS', default=45, cast=int)
+
+# KEBS will not clear a used import that is 8 or more years old, counted from
+# the year of first registration - so the oldest permissible age is 7. The
+# client's documentation calls this "the 7-year rule" and KEBS phrases it as
+# "under 8 years"; they are the same constraint counted from opposite ends.
+# Refusing a unit at the quote stage is far cheaper than at the port.
+IMPORT_MAX_VEHICLE_AGE_YEARS = config(
+    'IMPORT_MAX_VEHICLE_AGE_YEARS', default=7, cast=int
+)
 
 # Tests only. PBKDF2 is deliberately slow, and the suite creates hundreds of
 # users - that cost was most of a three minute run. This hasher is weak on
