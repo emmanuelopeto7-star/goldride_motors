@@ -26,6 +26,75 @@ def validate_import_age(year):
         )
 
 
+class ImportRates(models.Model):
+    """The KRA percentages in force, editable without a deploy.
+
+    A table rather than a settings block because these move on budget day and
+    the person who knows they moved is not the person who can push a release.
+    The newest row by `effective_from` wins; older rows are kept because they
+    are the record of what a quote was worked out under.
+
+    Nothing reads this at calculation time. Rates are copied onto a
+    SourcedUnit when it is created and the arithmetic uses that copy, for the
+    same reason the dollar rate is pinned: a quote given in March must not
+    quietly change when the June rates land.
+    """
+
+    duty_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("25"))
+    excise_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("25"),
+        help_text="Starting point only - excise is banded by engine capacity, "
+                  "so it is set per unit.",
+    )
+    vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("16"))
+    idf_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("3.5"))
+    rdl_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("2"))
+    stock_markup = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("15"),
+        help_text="Default margin when a rejected unit is pushed to stock.",
+    )
+
+    effective_from = models.DateField(default=timezone.now)
+    note = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Where these came from - a Finance Act, a circular.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-effective_from", "-created_at"]
+        verbose_name_plural = "Import rates"
+
+    @classmethod
+    def current(cls):
+        """The rates in force today.
+
+        Falls back to settings when the table is empty, so a fresh install and
+        the existing test suite both keep working without a fixture.
+        """
+        today = timezone.now().date()
+        rates = cls.objects.filter(effective_from__lte=today).first()
+        if rates is not None:
+            return rates
+
+        return cls(
+            duty_rate=settings.IMPORT_DUTY_RATE,
+            excise_rate=settings.IMPORT_EXCISE_RATE,
+            vat_rate=settings.IMPORT_VAT_RATE,
+            idf_rate=settings.IMPORT_IDF_RATE,
+            rdl_rate=settings.IMPORT_RDL_RATE,
+            stock_markup=settings.PUSH_TO_STOCK_MARKUP_PERCENT,
+        )
+
+    def __str__(self):
+        return f"Rates from {self.effective_from}"
+
+
 class ImportRequest(models.Model):
     """What a customer asked us to find. Not a car - a specification.
 
@@ -125,14 +194,22 @@ class SourcedUnit(models.Model):
         decimal_places=2,
         help_text="KES per USD, as quoted. Pinned so an old quote still reads.",
     )
-    # Excise is the only rate that varies per vehicle - it is banded by engine
-    # capacity - so it sits on the row while the rest live in settings.
+    # Every rate is copied here when the unit is created, from whatever
+    # ImportRates was in force that day. Pinned for the same reason as the
+    # dollar rate: a quote given in March must still read correctly after the
+    # June rates land, and a customer holding an old quote must not find the
+    # figure has moved under them.
     excise_rate = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=Decimal("25.00"),
-        help_text="Percent. Banded by engine capacity.",
+        null=True,
+        blank=True,
+        help_text="Percent. Banded by engine capacity - set this one per unit.",
     )
+    duty_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    vat_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    idf_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    rdl_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     # KRA assesses on its own CRSP valuation depreciated by age, not on what
     # we paid. Enter that figure once it is known and every charge is worked
     # out from it instead; blank falls back to CIF, which is the right
@@ -224,7 +301,7 @@ class SourcedUnit(models.Model):
 
     @property
     def import_duty_kes(self):
-        return self.customs_value * settings.IMPORT_DUTY_RATE / Decimal("100")
+        return self.customs_value * self.duty_rate / Decimal("100")
 
     @property
     def excise_duty_kes(self):
@@ -237,15 +314,15 @@ class SourcedUnit(models.Model):
     @property
     def vat_kes(self):
         base = self.customs_value + self.import_duty_kes + self.excise_duty_kes
-        return base * settings.IMPORT_VAT_RATE / Decimal("100")
+        return base * self.vat_rate / Decimal("100")
 
     @property
     def idf_kes(self):
-        return self.customs_value * settings.IMPORT_IDF_RATE / Decimal("100")
+        return self.customs_value * self.idf_rate / Decimal("100")
 
     @property
     def rdl_kes(self):
-        return self.customs_value * settings.IMPORT_RDL_RATE / Decimal("100")
+        return self.customs_value * self.rdl_rate / Decimal("100")
 
     @property
     def taxes_kes(self):
@@ -293,6 +370,22 @@ class SourcedUnit(models.Model):
         self.save(update_fields=["status", "rejected_reason"])
         return True, "rejected"
 
+    def save(self, *args, **kwargs):
+        # Pin on insert only. An edit must never re-rate a quote that has
+        # already been sent to somebody.
+        if self._state.adding:
+            rates = ImportRates.current()
+            for field, value in (
+                ("excise_rate", rates.excise_rate),
+                ("duty_rate", rates.duty_rate),
+                ("vat_rate", rates.vat_rate),
+                ("idf_rate", rates.idf_rate),
+                ("rdl_rate", rates.rdl_rate),
+            ):
+                if getattr(self, field) is None:
+                    setattr(self, field, value)
+        super().save(*args, **kwargs)
+
     def stock_price(self, markup_percent=None):
         """Landed cost plus margin, rounded to the nearest thousand shillings.
 
@@ -301,7 +394,7 @@ class SourcedUnit(models.Model):
         and charging that twice prices the car out of its own market.
         """
         if markup_percent is None:
-            markup_percent = settings.PUSH_TO_STOCK_MARKUP_PERCENT
+            markup_percent = ImportRates.current().stock_markup
         markup_percent = Decimal(markup_percent)
 
         raw = self.landed_cost_kes * (Decimal("1") + markup_percent / Decimal("100"))
