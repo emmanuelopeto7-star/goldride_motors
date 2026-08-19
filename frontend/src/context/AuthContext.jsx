@@ -43,14 +43,21 @@ export function AuthProvider({ children }) {
 
   const roles = user?.roles ?? []
 
+  // Mirrors goldride_app/permissions.py exactly. A superuser passes IsSales
+  // and IsManager on the server, so a route guard that ignores that lets an
+  // account call every staff endpoint in the API while being bounced from the
+  // screen built on top of them. IsCustomer has no such bypass and neither
+  // does isCustomer here - a superuser is not a buyer.
+  const superuser = Boolean(user?.is_superuser)
+
   const value = {
     user: user ?? null,
     isLoading: Boolean(token) && isPending,
     roles,
     isCustomer: roles.includes('Customer'),
-    isSales: roles.includes('Sales') || roles.includes('Manager'),
-    isManager: roles.includes('Manager'),
-    isStaff: Boolean(user?.is_staff || user?.is_superuser),
+    isSales: superuser || roles.includes('Sales') || roles.includes('Manager'),
+    isManager: superuser || roles.includes('Manager'),
+    isStaff: Boolean(user?.is_staff) || superuser,
     needsEmail: Boolean(user?.needs_email),
     emailVerified: Boolean(user?.email_verified),
     hasPassword: Boolean(user?.has_password),
