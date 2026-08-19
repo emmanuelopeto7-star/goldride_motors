@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import Modal from './Modal'
+import { counted } from '../lib/format'
 
 /** The mosaic: one large frame left, a 2x2 grid right, the rest behind the
  *  photo-count button. The row height is fixed rather than derived from
@@ -47,16 +48,21 @@ function Gallery({ photos, title }) {
 
   return (
     <>
-      <div className="relative grid h-[320px] gap-3 lg:h-[520px] lg:grid-cols-2">
+      <div className="relative grid h-[320px] grid-rows-[minmax(0,1fr)] gap-3 lg:h-[520px] lg:grid-cols-2">
+        {/* The image is positioned out of flow. As a normal child it sizes
+            the grid row to its own intrinsic height, and a portrait
+            photograph - which is most of what a phone produces - then pushes
+            the row past the container's fixed height and spills over the
+            content below. Absolute inside a relative box cannot do that. */}
         <button
           type="button"
           onClick={() => openAt(0)}
-          className="h-full overflow-hidden border border-line"
+          className="relative h-full overflow-hidden border border-line"
         >
           <img
             src={lead}
             alt={title}
-            className="h-full w-full object-cover transition-transform duration-[400ms] hover:scale-[1.03]"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-[400ms] hover:scale-[1.03]"
           />
         </button>
 
@@ -67,12 +73,12 @@ function Gallery({ photos, title }) {
                 key={src}
                 type="button"
                 onClick={() => openAt(index + 1)}
-                className="h-full overflow-hidden border border-line"
+                className="relative h-full overflow-hidden border border-line"
               >
                 <img
                   src={src}
                   alt=""
-                  className="h-full w-full object-cover transition-transform duration-[400ms] hover:scale-[1.03]"
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-[400ms] hover:scale-[1.03]"
                 />
               </button>
             ))}
@@ -84,7 +90,7 @@ function Gallery({ photos, title }) {
           onClick={() => openAt(0)}
           className="absolute bottom-4 right-4 rounded-full bg-ink/70 px-4 py-2 text-badge uppercase text-surface"
         >
-          {count} photos
+          {counted(count, 'photo')}
         </button>
       </div>
 
