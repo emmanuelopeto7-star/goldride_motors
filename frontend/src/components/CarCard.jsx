@@ -4,15 +4,21 @@ import { useFavourites } from '../hooks/useFavourites'
 
 function CarCard({ car }) {
   const photoCount = car.images.length + (car.image ? 1 : 0)
+  // Fall back to the gallery, the way the detail page does. A car can gain
+  // photographs without one being promoted to the card - anything pushed to
+  // stock, or uploaded from the dashboard - and rendering only car.image left
+  // those showing an empty grey box in the grid while their own detail page
+  // displayed the photo perfectly well.
+  const cover = car.image || car.images[0]?.image
   const { isSaved, toggle } = useFavourites()
   const favourite = isSaved(car.id)
 
   return (
     <article className="group relative border border-line bg-surface transition-colors hover:border-line-hover">
       <div className="relative aspect-[4/3] overflow-hidden bg-page">
-        {car.image && (
+        {cover && (
           <img
-            src={car.image}
+            src={cover}
             alt={`${car.year} ${car.make} ${car.model}`}
             className="h-full w-full object-cover transition-transform duration-[400ms] group-hover:scale-[1.03]"
           />
