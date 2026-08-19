@@ -9,6 +9,7 @@ import {
 import { useScrolled } from '../hooks/useScrolled'
 import { useHeroBanner } from '../hooks/useHeroBanner'
 import { useAuth } from '../context/AuthContext'
+import { isBrowsing } from '../lib/browsing'
 import AuthModal from './AuthModal'
 import BrandStrip from './BrandStrip'
 import Footer from './Footer'
@@ -31,7 +32,11 @@ function Layout() {
   // whether a hero will actually draw, not merely on the route - otherwise a
   // home page with no banner leaves white header text on a white background.
   const { data: banner, isPending: bannerPending } = useHeroBanner()
-  const hasHero = location.pathname === '/' && (bannerPending || Boolean(banner))
+  // A filtered list lives at "/" too, but it is a result set rather than the
+  // front door - so no hero, and the header is solid from the first paint.
+  const browsing = isBrowsing(searchParams)
+  const hasHero =
+    location.pathname === '/' && !browsing && (bannerPending || Boolean(banner))
   const overlay = hasHero && !scrolled
 
   function handleSubmit(event) {

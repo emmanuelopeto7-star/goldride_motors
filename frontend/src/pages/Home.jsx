@@ -12,6 +12,7 @@ import MakeGrid from '../components/MakeGrid'
 import ModelCarousel from '../components/ModelCarousel'
 import Page from '../components/Page'
 import Pagination from '../components/Pagination'
+import { browsingTitle, isBrowsing } from '../lib/browsing'
 
 const gridClass = 'grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3'
 
@@ -29,10 +30,13 @@ const LIST_PARAMS = [
 
 function Home() {
   const [searchParams] = useSearchParams()
-  const page = searchParams.get('page') ?? '1'
 
   const listRef = useRef(null)
-  const openedAt = useRef(page)
+  // The whole query string, so changing a filter lands on the results too -
+  // not just paging, which was all this used to notice.
+  const signature = searchParams.toString()
+  const openedAt = useRef(signature)
+  const wasBrowsing = useRef(isBrowsing(searchParams))
 
   const params = {}
   LIST_PARAMS.forEach((key) => {
@@ -57,11 +61,24 @@ function Home() {
   // rather than by run count: StrictMode invokes effects twice, so a
   // "skip the first run" flag would fire on arrival instead.
   useEffect(() => {
-    if (page !== openedAt.current) {
-      listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      openedAt.current = page
-    }
-  }, [page])
+    if (signature === openedAt.current) return
+
+    const nowBrowsing = isBrowsing(searchParams)
+    // Filtering from the front door removes the hero, so the whole page jumps
+    // up by a viewport height. Animating a scroll across content that has
+    // just moved reads as a glitch - jump straight there instead. A small
+    // move within the same mode, like paging, can afford to be smooth.
+    const modeChanged = nowBrowsing !== wasBrowsing.current
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+    listRef.current?.scrollIntoView({
+      behavior: modeChanged || reduced ? 'auto' : 'smooth',
+      block: 'start',
+    })
+
+    openedAt.current = signature
+    wasBrowsing.current = nowBrowsing
+  }, [signature, searchParams])
 
   const search = searchParams.get('search') ?? ''
   const make = searchParams.get('make') ?? ''
@@ -73,13 +90,27 @@ function Home() {
   if (search) label = `results for "${search}"`
   else if (filtered) label = 'matching cars'
 
+  const browsing = isBrowsing(searchParams)
+
   return (
     <>
-      <Hero count={data?.count ?? 0} />
+      {/* A result set is not the front door. Rendering the hero for
+          "?make=Toyota" drops you at a full-height photograph with the cars
+          you asked for below the fold. */}
+      {!browsing && <Hero count={data?.count ?? 0} />}
 
       <FilterBar />
 
       <Page>
+        {browsing && (
+          <div className="mb-12 flex flex-wrap items-end justify-between gap-4 border-b border-line pb-8">
+            <h1 className="font-serif text-h1">{browsingTitle(searchParams)}</h1>
+            <Link to="/" className="text-meta text-ink underline">
+              Clear and start again
+            </Link>
+          </div>
+        )}
+
         <div ref={listRef} className="scroll-mt-[200px]">
           {isPending && (
             <div className={gridClass}>
