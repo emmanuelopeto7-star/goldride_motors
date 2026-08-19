@@ -109,9 +109,17 @@ in review ("breaks §3.2 — cards must have radius 0").
 
 ## 8. Make grid / model carousel
 
-1. Make tile: 1:1, bordered, logo at 60% width, greyscale → colour on hover; 8 / 4 / 3 across.
-2. Model card: 88px square thumb left, name 15px + "N LISTINGS" 11px uppercase, chevron right.
-3. Carousel arrows: 40px bordered circles, top-right of section.
+1. Make tile: 1:1, bordered, logo at 70% width in **full colour**, maker named
+   beneath it, count below that; 8 / 4 / 3 across. Hover moves the border to
+   `#1A1A1A` — the logo itself does not change.
+   *Was greyscale-until-hover. Reversed 2026-08-19: manufacturer marks are the
+   only colour on the page, and desaturating them made the grid read as
+   disabled rather than restrained.*
+2. The tile must stay square. The logo is a flex child that gives up height
+   when a long name wraps — a fixed-height logo pushes the tile taller than it
+   is wide and breaks the row.
+3. Model card: 88px square thumb left, name 15px + "N LISTINGS" 11px uppercase, chevron right.
+4. Carousel arrows: 40px bordered circles, top-right of section.
 
 ## 9. Modal
 
