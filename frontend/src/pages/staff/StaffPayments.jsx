@@ -4,7 +4,7 @@ import DispatchPaymentModal from '../../components/DispatchPaymentModal'
 import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
 import Pagination from '../../components/Pagination'
-import { formatPrice } from '../../lib/format'
+import { counted, formatPrice } from '../../lib/format'
 import { STATUSES, useStaffPayments } from '../../hooks/useStaffPayments'
 
 const VIEWS = [['', 'All'], ...STATUSES]
@@ -77,7 +77,7 @@ function StaffPayments() {
           that were taken but never recorded against an order. */}
       {sweep && (
         <p className="mt-8 border border-line bg-surface p-4 text-meta text-ink-soft">
-          Checked {sweep.checked} pending payment{sweep.checked === 1 ? '' : 's'}.{' '}
+          Checked {counted(sweep.checked, 'pending payment')}.{' '}
           {sweep.updated > 0 ? (
             <span className="text-ink">
               {sweep.updated} had moved without us hearing about it.

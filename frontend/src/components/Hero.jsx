@@ -1,5 +1,6 @@
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useHeroBanner } from '../hooks/useHeroBanner'
+import { counted } from '../lib/format'
 
 function Hero({ count }) {
   // Hooks first, always - the early returns below must not change how many run.
@@ -51,7 +52,7 @@ function Hero({ count }) {
         </h1>
         <p className="mt-4 text-badge uppercase text-surface/80">
           {banner.subline ? `${banner.subline} · ` : ''}
-          {count} cars available
+          {counted(count, 'car')} available
         </p>
       </div>
     </section>

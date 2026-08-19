@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import CarEditModal from '../../components/CarEditModal'
+import CarPhotosModal from '../../components/CarPhotosModal'
 import EmptyState from '../../components/EmptyState'
 import Pagination from '../../components/Pagination'
 import ErrorState from '../../components/ErrorState'
-import { formatPrice } from '../../lib/format'
+import { counted, formatPrice, pluralise } from '../../lib/format'
 import {
   EXPIRING_SOON_DAYS,
   daysUntilExpiry,
@@ -31,7 +32,7 @@ function ExpiryCell({ car, onRenew, isRenewing }) {
       ? 'Expired'
       : days === 0
         ? 'Expires today'
-        : `${days} day${days === 1 ? '' : 's'} left`
+        : `${counted(days, 'day')} left`
 
   return (
     <span className="flex flex-wrap items-center gap-3">
@@ -65,11 +66,13 @@ function StaffInventory() {
   const [searchParams, setSearchParams] = useSearchParams()
   const expired = searchParams.get('expired') ?? ''
   const search = searchParams.get('search') ?? ''
+  const photos = searchParams.get('photos') ?? ''
   const [term, setTerm] = useState(search)
   const [editing, setEditing] = useState(null)
+  const [photographing, setPhotographing] = useState(null)
   const page = Math.max(1, Number(searchParams.get('page') ?? 1))
 
-  const { query, extend, update } = useStaffCars({ search, expired, page })
+  const { query, extend, update } = useStaffCars({ search, expired, photos, page })
 
   function setParam(next) {
     // Page is deliberately dropped: changing a filter or a search puts you on
@@ -77,6 +80,7 @@ function StaffInventory() {
     const params = {}
     if (next.expired ?? expired) params.expired = next.expired ?? expired
     if (next.search ?? search) params.search = next.search ?? search
+    if (next.photos ?? photos) params.photos = next.photos ?? photos
     setSearchParams(params)
   }
 
@@ -121,8 +125,8 @@ function StaffInventory() {
 
       {needingAttention > 0 && expired !== 'true' && (
         <p className="mt-8 border border-line bg-surface p-4 text-meta text-ink-soft">
-          {needingAttention} listing{needingAttention === 1 ? '' : 's'} on this page{' '}
-          {needingAttention === 1 ? 'is' : 'are'} expired or within{' '}
+          {counted(needingAttention, 'listing')} on this page{' '}
+          {pluralise(needingAttention, 'is', 'are')} expired or within{' '}
           {EXPIRING_SOON_DAYS} days of it.{' '}
           <button
             type="button"
@@ -159,6 +163,7 @@ function StaffInventory() {
                   <th className="px-4 py-3 text-left font-normal">Price</th>
                   <th className="px-4 py-3 text-left font-normal">Status</th>
                   <th className="px-4 py-3 text-left font-normal">Chassis</th>
+                  <th className="px-4 py-3 text-left font-normal">Photos</th>
                   <th className="px-4 py-3 text-left font-normal">Listing</th>
                   <th className="px-4 py-3 text-right font-normal">Edit</th>
                 </tr>
@@ -177,6 +182,20 @@ function StaffInventory() {
                     </td>
                     <td className="px-4 py-3 text-ink-soft">
                       {car.vin || car.reference || '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* A listing with no photograph shows a blank card on
+                          the site, so it is called out rather than shown as
+                          a quiet zero. */}
+                      <button
+                        type="button"
+                        onClick={() => setPhotographing(car)}
+                        className={`underline ${
+                          car.photo_count === 0 ? 'text-ink' : 'text-ink-soft'
+                        }`}
+                      >
+                        {car.photo_count === 0 ? 'None' : car.photo_count}
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <ExpiryCell
@@ -207,6 +226,13 @@ function StaffInventory() {
           count={query.data.count}
           hasNext={Boolean(query.data.next)}
           hasPrevious={Boolean(query.data.previous)}
+        />
+      )}
+
+      {photographing && (
+        <CarPhotosModal
+          car={photographing}
+          onClose={() => setPhotographing(null)}
         />
       )}
 

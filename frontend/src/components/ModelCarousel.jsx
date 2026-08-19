@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
+import { counted } from '../lib/format'
 
 /** §8.2 — 88px square thumb left, name, "N LISTINGS", chevron right.
  *  §8.3 — 40px bordered circle arrows, top-right of the section. */
@@ -70,7 +71,7 @@ function ModelCarousel() {
                 {make} {model}
               </p>
               <p className="mt-1 text-badge uppercase text-ink-mute">
-                {count} {count === 1 ? 'listing' : 'listings'}
+                {counted(count, 'listing')}
               </p>
             </div>
 

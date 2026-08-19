@@ -3,6 +3,7 @@ import CarCard from '../components/CarCard'
 import CardSkeleton from '../components/CardSkeleton'
 import EmptyState from '../components/EmptyState'
 import { useFavourites } from '../hooks/useFavourites'
+import { counted } from '../lib/format'
 
 function MySaved() {
   const { cars, isPending } = useFavourites()
@@ -34,7 +35,7 @@ function MySaved() {
   return (
     <>
       <p className="text-badge uppercase text-ink-soft">
-        {cars.length} saved {cars.length === 1 ? 'car' : 'cars'}
+        {counted(cars.length, 'saved car')}
       </p>
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {cars.map((car) => (

@@ -12,6 +12,7 @@ import MakeGrid from '../components/MakeGrid'
 import ModelCarousel from '../components/ModelCarousel'
 import Page from '../components/Page'
 import Pagination from '../components/Pagination'
+import { counted } from '../lib/format'
 import { browsingTitle, isBrowsing } from '../lib/browsing'
 
 const gridClass = 'grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3'
@@ -86,9 +87,11 @@ function Home() {
     (key) => key !== 'page' && key !== 'ordering' && searchParams.get(key),
   )
 
-  let label = 'cars available'
-  if (search) label = `results for "${search}"`
-  else if (filtered) label = 'matching cars'
+  // Built whole rather than as "{count} {label}", so the noun agrees with
+  // the number instead of being a fixed plural glued onto it.
+  let heading = `${counted(data?.count ?? 0, 'car')} available`
+  if (search) heading = `${counted(data?.count ?? 0, 'result')} for "${search}"`
+  else if (filtered) heading = `${counted(data?.count ?? 0, 'matching car')}`
 
   const browsing = isBrowsing(searchParams)
 
@@ -166,7 +169,7 @@ function Home() {
           {data && data.count > 0 && (
             <>
               <p className="text-badge uppercase text-ink-soft">
-                {data.count} {label}
+                {heading}
               </p>
               <div className={`mt-6 ${gridClass}`}>
                 {data.results.map((car) => (
