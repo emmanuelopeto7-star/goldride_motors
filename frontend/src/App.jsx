@@ -17,6 +17,8 @@ import TrackOrder from './pages/TrackOrder'
 import StaffApprovals from './pages/staff/StaffApprovals'
 import StaffInventory from './pages/staff/StaffInventory'
 import StaffLayout from './pages/staff/StaffLayout'
+import StaffOrders from './pages/staff/StaffOrders'
+import StaffPayments from './pages/staff/StaffPayments'
 import StaffSourcing from './pages/staff/StaffSourcing'
 import StaffSourcingDetail from './pages/staff/StaffSourcingDetail'
 
@@ -39,6 +41,8 @@ function App() {
         <Route path="sourcing" element={<StaffSourcing />} />
         <Route path="sourcing/:id" element={<StaffSourcingDetail />} />
         <Route path="inventory" element={<StaffInventory />} />
+        <Route path="orders" element={<StaffOrders />} />
+        <Route path="payments" element={<StaffPayments />} />
       </Route>
 
       <Route element={<Layout />}>
