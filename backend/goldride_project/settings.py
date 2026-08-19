@@ -191,8 +191,28 @@ SPECTACULAR_SETTINGS = {
         "CarAvailabilityEnum": "cars.models.Car.avilability_choices",
     },
 }
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DEFAULT_FROM_EMAIL = 'noreply@goldridemotors.co.ke'
+# Console stays the default so a fresh checkout and the test suite need no
+# mail server. Production sets EMAIL_BACKEND to the SMTP backend; until it
+# does, every email this system sends is printed to a log and reaches nobody.
+EMAIL_BACKEND = config(
+    'EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_HOST = config('EMAIL_HOST', default='')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+
+# Without this a mail server that accepts the connection and then hangs holds
+# the worker thread open indefinitely - and these emails are sent inline,
+# during a request that is approving a sale.
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
+
+DEFAULT_FROM_EMAIL = config(
+    'DEFAULT_FROM_EMAIL', default='noreply@goldridemotors.co.ke'
+)
+# Where "tell sales" messages go. Was hardcoded at five call sites.
+SALES_EMAIL = config('SALES_EMAIL', default='sales@goldridemotors.co.ke')
 
 # Where the confirmation link points (this API), and where it sends the
 # browser afterwards (the React app).
@@ -237,12 +257,32 @@ PUSH_TO_STOCK_MARKUP_PERCENT = config(
     'PUSH_TO_STOCK_MARKUP_PERCENT', default=15, cast=Decimal
 )
 
+# Mail failures are logged rather than raised, so they need somewhere to land.
+# Console handler because Render captures stdout - a file would be written to
+# an ephemeral disk and lost on the next deploy.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'plain': {'format': '{levelname} {asctime} {name} {message}', 'style': '{'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'plain'},
+    },
+    'loggers': {
+        'goldride': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
+
 # Tests only. PBKDF2 is deliberately slow, and the suite creates hundreds of
 # users - that cost was most of a three minute run. This hasher is weak on
 # purpose and never touches a real password: the branch cannot be reached
 # outside `manage.py test`.
 if 'test' in sys.argv:
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+    # Every send logs a line, and the suite sends dozens - it buries the
+    # actual test output. Warnings and errors still surface.
+    LOGGING['loggers']['goldride']['level'] = 'WARNING'
 
 
 # Internationalization
