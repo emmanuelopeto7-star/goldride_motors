@@ -7,7 +7,8 @@ worth a targeted message rather than a form letter.
 """
 
 from django.conf import settings
-from django.core.mail import send_mail
+
+from goldride_app.mail import send as send_mail
 
 
 def notify_cancelled(order):
@@ -23,9 +24,7 @@ def notify_cancelled(order):
             "Re-engage them at /api/staff/orders/ once there is something to "
             "offer."
         ),
-        from_email=None,
-        recipient_list=["sales@goldridemotors.co.ke"],
-        fail_silently=True,
+        to=[settings.SALES_EMAIL],
     )
 
 
@@ -49,9 +48,7 @@ def notify_new_request(import_request):
             "We will email you as soon as we have units to show you.\n\n"
             "Goldride Motors"
         ),
-        from_email=None,
-        recipient_list=[import_request.email],
-        fail_silently=True,
+        to=[import_request.email],
     )
 
     send_mail(
@@ -65,9 +62,7 @@ def notify_new_request(import_request):
             f"Notes: {import_request.notes or 'none'}\n\n"
             "Source units against it at /api/staff/import-requests/."
         ),
-        from_email=None,
-        recipient_list=["sales@goldridemotors.co.ke"],
-        fail_silently=True,
+        to=[settings.SALES_EMAIL],
     )
 
 
@@ -95,9 +90,7 @@ def notify_units_sourced(import_request):
             f"Take a look and tell us which you want:\n{tracking}\n\n"
             "Goldride Motors"
         ),
-        from_email=None,
-        recipient_list=[import_request.email],
-        fail_silently=True,
+        to=[import_request.email],
     )
     return True
 
@@ -122,8 +115,6 @@ def send_reengagement(order, message):
             f"Your order is open again and you can follow it here:\n{tracking}\n\n"
             "Goldride Motors"
         ),
-        from_email=None,
-        recipient_list=[recipient],
-        fail_silently=True,
+        to=[recipient],
     )
     return True

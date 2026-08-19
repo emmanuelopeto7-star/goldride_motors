@@ -1,4 +1,4 @@
-from django.core.mail import send_mail
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -6,6 +6,8 @@ from imports.models import ImportOrder
 from payments.dispatch import dispatch_payment
 from payments.models import Payment
 from payments.notifications import send_payment_instructions
+
+from goldride_app.mail import send as send_mail
 
 
 def notify_sales(purchase_request):
@@ -19,9 +21,7 @@ def notify_sales(purchase_request):
             f"{purchase_request.message}\n\n"
             "Approve or reject it at /api/purchases/staff/."
         ),
-        from_email=None,
-        recipient_list=["sales@goldridemotors.co.ke"],
-        fail_silently=True,
+        to=[settings.SALES_EMAIL],
     )
 
 

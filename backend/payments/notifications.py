@@ -14,7 +14,8 @@ whose payment fell back to manual is the one most in need of an email.
 """
 
 from django.conf import settings
-from django.core.mail import send_mail
+
+from goldride_app.mail import send as send_mail
 from django.utils import timezone
 
 
@@ -72,9 +73,7 @@ def send_payment_instructions(payment, email):
             f"{settings.FRONTEND_URL}/track/{order.token}\n\n"
             "Goldride Motors"
         ),
-        from_email=None,
-        recipient_list=[email],
-        fail_silently=True,
+        to=[email],
     )
 
     payment.checkout_sent_at = timezone.now()

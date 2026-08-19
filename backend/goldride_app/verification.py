@@ -7,8 +7,9 @@ the email invalidates every outstanding link automatically.
 import logging
 
 from django.conf import settings
+
+from .mail import send as send_mail
 from django.core import signing
-from django.core.mail import send_mail
 
 from .models import get_profile
 
@@ -63,11 +64,9 @@ def send_verification_email(user):
             "If you did not create an account, ignore this email - nothing "
             "happens until the link is opened.\n"
         ),
-        from_email=None,
-        recipient_list=[user.email],
+        to=[user.email],
         # A dead mail server must not turn a signup into a 500. The address
         # stays unverified, and /api/auth/verify-email/resend/ tries again.
-        fail_silently=True,
     )
     return True
 

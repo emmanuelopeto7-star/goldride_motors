@@ -1,4 +1,3 @@
-from django.core.mail import send_mail
 from rest_framework import generics
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -6,6 +5,9 @@ from goldride_app.permissions import IsCustomer, IsSales
 
 from .models import Inquiry
 from .serializers import InquirySerializer, StaffInquirySerializer
+
+from django.conf import settings
+from goldride_app.mail import send as send_mail
 
 
 class InquiryCreateView(generics.ListCreateAPIView):
@@ -27,9 +29,7 @@ class InquiryCreateView(generics.ListCreateAPIView):
         send_mail(
             subject=f"New inquiry: {inquiry.car}",
             message=f"{inquiry.name} ({inquiry.phone}) is interested in {inquiry.car}.\n\n{inquiry.message}",
-            from_email=None,
-            recipient_list=["sales@goldridemotors.co.ke"],
-            fail_silently=True,
+            to=[settings.SALES_EMAIL],
         )
 
 
