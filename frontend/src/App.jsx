@@ -15,6 +15,7 @@ import MySaved from './pages/MySaved'
 import NotFound from './pages/NotFound'
 import TrackOrder from './pages/TrackOrder'
 import StaffApprovals from './pages/staff/StaffApprovals'
+import StaffEnquiries from './pages/staff/StaffEnquiries'
 import StaffInventory from './pages/staff/StaffInventory'
 import StaffLayout from './pages/staff/StaffLayout'
 import StaffOrders from './pages/staff/StaffOrders'
@@ -43,6 +44,7 @@ function App() {
         <Route path="inventory" element={<StaffInventory />} />
         <Route path="orders" element={<StaffOrders />} />
         <Route path="payments" element={<StaffPayments />} />
+        <Route path="enquiries" element={<StaffEnquiries />} />
       </Route>
 
       <Route element={<Layout />}>

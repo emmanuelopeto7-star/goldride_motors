@@ -19,6 +19,7 @@ const TABS = [
   ['/staff/inventory', 'Inventory'],
   ['/staff/orders', 'Orders'],
   ['/staff/payments', 'Payments'],
+  ['/staff/enquiries', 'Enquiries'],
 ]
 
 function StaffLayout() {
