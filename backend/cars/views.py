@@ -1,4 +1,5 @@
 from django.db.models import Count, Max
+from drf_spectacular.utils import extend_schema
 from django.shortcuts import get_object_or_404
 from rest_framework import generics,filters,permissions,status
 from rest_framework.response import Response
@@ -92,6 +93,11 @@ class FavouriteView(generics.ListCreateAPIView):
 class FavouriteDestroyView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=None,
+        responses={204: None},
+        description="Unsave a car. Keyed on the car id, not the favourite id.",
+    )
     def delete(self, request, car_id):
         favourite = get_object_or_404(Favourite, user=request.user, car_id=car_id)
         favourite.delete()
@@ -101,6 +107,10 @@ class FavouriteDestroyView(APIView):
 class HeroBannerView(APIView):
     """The active hero, or null. Read-only and public, like the car list."""
 
+    @extend_schema(
+        responses={200: HeroBannerSerializer},
+        description="The active hero banner, or null when none is set.",
+    )
     def get(self, request):
         banner = HeroBanner.objects.filter(is_active=True).first()
         if banner is None:

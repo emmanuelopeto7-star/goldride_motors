@@ -1,4 +1,5 @@
 from django.conf import settings
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import Car, CarImage, Favourite, HeroBanner
@@ -20,6 +21,7 @@ class CarModelSerializer(serializers.Serializer):
     count = serializers.IntegerField()
     image = serializers.SerializerMethodField()
 
+    @extend_schema_field(serializers.URLField(allow_null=True))
     def get_image(self, row):
         path = row.get("image")
         if not path:
@@ -29,34 +31,12 @@ class CarModelSerializer(serializers.Serializer):
         return request.build_absolute_uri(url) if request else url
 
 
-class FavouriteSerializer(serializers.ModelSerializer):
-    """Write a car id, read the whole car back - the saved list is a grid of
-    cards, so it needs everything a card needs."""
-
-    car = serializers.PrimaryKeyRelatedField(queryset=Car.objects.all())
-    car_detail = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Favourite
-        fields = ["id", "car", "car_detail", "created_at"]
-        read_only_fields = ["id", "created_at"]
-
-    def get_car_detail(self, favourite):
-        return CarSerializer(favourite.car, context=self.context).data
-
-
-class HeroBannerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = HeroBanner
-        fields = [
-            'id', 'image', 'video', 'headline', 'subline', 'cta_label', 'cta_url',
-        ]
-
-
 class CarImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = CarImage
         fields = ["id", "image"]
+
+
 class CarSerializer(serializers.ModelSerializer):
     images = CarImageSerializer(many=True, read_only=True)
 
@@ -89,4 +69,29 @@ class CarSerializer(serializers.ModelSerializer):
             'body_type', 'body_type_label',
             'exterior_colour', 'interior_colour', 'location', 'vin', 'reference',
             'expires_at', 'video_url', 'video_embed_url',
+        ]
+
+
+class FavouriteSerializer(serializers.ModelSerializer):
+    """Write a car id, read the whole car back - the saved list is a grid of
+    cards, so it needs everything a card needs."""
+
+    car = serializers.PrimaryKeyRelatedField(queryset=Car.objects.all())
+    car_detail = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Favourite
+        fields = ["id", "car", "car_detail", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    @extend_schema_field(CarSerializer)
+    def get_car_detail(self, favourite):
+        return CarSerializer(favourite.car, context=self.context).data
+
+
+class HeroBannerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HeroBanner
+        fields = [
+            'id', 'image', 'video', 'headline', 'subline', 'cta_label', 'cta_url',
         ]

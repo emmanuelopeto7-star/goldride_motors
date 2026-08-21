@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import PurchaseRequest
@@ -57,6 +58,7 @@ class StaffPurchaseRequestSerializer(PurchaseRequestSerializer):
             "reviewed_by_username",
         ]
 
+    @extend_schema_field(serializers.CharField())
     def get_car_title(self, purchase_request):
         """`car_display` is Car.__str__, which trails the entire description
         and prices in dollars. Unusable as a heading, so the queue gets the

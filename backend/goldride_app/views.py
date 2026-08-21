@@ -67,7 +67,7 @@ class EmailLoginView(APIView):
 
     @extend_schema(
         request=EmailLoginSerializer,
-        responses={200: inline_serializer('EmailLogin', {
+        responses={200: inline_serializer('EmailLoginResponse', {
             'token': serializers.CharField(),
         })},
         description="Sign in with an email address and password. Returns the same "
@@ -164,7 +164,7 @@ class SocialLoginView(APIView):
     @extend_schema(
         request=SocialLoginSerializer,
         responses={
-            200: inline_serializer('SocialLogin', {
+            200: inline_serializer('SocialLoginResponse', {
                 'token': serializers.CharField(),
                 'username': serializers.CharField(),
                 'email': serializers.EmailField(),
