@@ -25,25 +25,28 @@ function Field({ id, label, hint, ...props }) {
  *  computed in the browser; once saved, everything on screen comes from the
  *  server instead.
  */
-function SourcedUnitForm({ request, rates, mutation, onDone }) {
-  const [values, setValues] = useState({
-    make: request.make,
-    model: request.model,
-    year: request.year,
-    chassis_number: '',
-    mileage_km: '',
-    grade: '',
-    exterior_colour: '',
-    auction_sheet_url: '',
-    unit_price_usd: '',
-    freight_usd: '',
-    insurance_usd: '',
-    dollar_rate: '',
-    excise_rate: rates?.excise_default ?? '',
-    customs_value_kes: '',
-    clearing_kes: '',
-    service_fee_kes: '',
-  })
+function SourcedUnitForm({ request, rates, mutation, onDone, unit = null }) {
+  // Editing seeds from the saved unit, including the rates pinned to it -
+  // reloading today's rates into an old quote would re-price it, which is the
+  // exact thing pinning them was meant to prevent.
+  const [values, setValues] = useState(() => ({
+    make: unit?.make ?? request.make,
+    model: unit?.model ?? request.model,
+    year: unit?.year ?? request.year,
+    chassis_number: unit?.chassis_number ?? '',
+    mileage_km: unit?.mileage_km ?? '',
+    grade: unit?.grade ?? '',
+    exterior_colour: unit?.exterior_colour ?? '',
+    auction_sheet_url: unit?.auction_sheet_url ?? '',
+    unit_price_usd: unit?.unit_price_usd ?? '',
+    freight_usd: unit?.freight_usd ?? '',
+    insurance_usd: unit?.insurance_usd ?? '',
+    dollar_rate: unit?.dollar_rate ?? '',
+    excise_rate: unit?.excise_rate ?? rates?.excise_default ?? '',
+    customs_value_kes: unit?.customs_value_kes ?? '',
+    clearing_kes: unit?.clearing_kes ?? '',
+    service_fee_kes: unit?.service_fee_kes ?? '',
+  }))
 
   function set(field) {
     return (event) =>
@@ -61,7 +64,9 @@ function SourcedUnitForm({ request, rates, mutation, onDone }) {
     const payload = Object.fromEntries(
       Object.entries(values).map(([key, value]) => [key, value === '' ? null : value]),
     )
-    mutation.mutate(payload, { onSuccess: onDone })
+    mutation.mutate(unit ? { ...payload, unitId: unit.id } : payload, {
+      onSuccess: onDone,
+    })
   }
 
   const rows = preview
@@ -153,7 +158,7 @@ function SourcedUnitForm({ request, rates, mutation, onDone }) {
           disabled={mutation.isPending}
           className="mt-6 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
-          {mutation.isPending ? 'Saving...' : 'Add this unit'}
+          {mutation.isPending ? 'Saving...' : unit ? 'Save changes' : 'Add this unit'}
         </button>
       </aside>
     </form>

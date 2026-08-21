@@ -14,7 +14,7 @@ const STATUS_LABEL = {
   cancelled: 'Cancelled',
 }
 
-function UnitRow({ unit, onPush, isPushing }) {
+function UnitRow({ unit, onPush, isPushing, onEdit }) {
   const spec = [
     unit.mileage_km && `${Number(unit.mileage_km).toLocaleString('en-KE')} km`,
     unit.grade && `Grade ${unit.grade}`,
@@ -61,22 +61,34 @@ function UnitRow({ unit, onPush, isPushing }) {
         </dl>
       </div>
 
-      {/* Only a unit nobody took, and only once. The API refuses otherwise. */}
-      {unit.status === 'rejected' && !unit.pushed_to_car && (
-        <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-6">
-          <button
-            type="button"
-            disabled={isPushing}
-            onClick={() => onPush(unit)}
-            className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
-          >
-            Push to stock
-          </button>
-          <p className="text-meta text-ink-soft">
-            Would list at {formatPrice(unit.stock_price_preview)}
-          </p>
-        </div>
-      )}
+      <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-6">
+        {/* Correcting a quote stays available at any status - a mistyped
+            dollar rate is worth fixing even on a unit already declined. */}
+        <button
+          type="button"
+          onClick={() => onEdit(unit)}
+          className="text-meta text-ink underline"
+        >
+          Edit this quote
+        </button>
+
+        {/* Only a unit nobody took, and only once. The API refuses otherwise. */}
+        {unit.status === 'rejected' && !unit.pushed_to_car && (
+          <>
+            <button
+              type="button"
+              disabled={isPushing}
+              onClick={() => onPush(unit)}
+              className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
+            >
+              Push to stock
+            </button>
+            <p className="text-meta text-ink-soft">
+              Would list at {formatPrice(unit.stock_price_preview)}
+            </p>
+          </>
+        )}
+      </div>
 
       {unit.pushed_to_car && (
         <p className="mt-6 border-t border-line pt-6 text-meta text-ink-soft">
@@ -93,9 +105,11 @@ function UnitRow({ unit, onPush, isPushing }) {
 
 function StaffSourcingDetail() {
   const { id } = useParams()
-  const { query, addUnit, notify, pushToStock } = useImportRequestDetail(id)
+  const { query, addUnit, updateUnit, notify, pushToStock } =
+    useImportRequestDetail(id)
   const { data: rates } = useImportRates()
   const [adding, setAdding] = useState(false)
+  const [editingUnit, setEditingUnit] = useState(null)
 
   if (query.isPending) {
     return <div className="h-64 w-full animate-pulse bg-line" />
@@ -211,11 +225,40 @@ function StaffSourcingDetail() {
                 unit={unit}
                 isPushing={pushToStock.isPending}
                 onPush={(target) => pushToStock.mutate({ unitId: target.id })}
+                onEdit={(target) => {
+                  updateUnit.reset()
+                  setEditingUnit(target)
+                  setAdding(false)
+                }}
               />
             ))}
           </ul>
         )}
       </section>
+
+      {editingUnit && (
+        <section className="mt-16 border-t border-line pt-12">
+          <h3 className="font-serif text-section">
+            Edit {editingUnit.year} {editingUnit.make} {editingUnit.model}
+          </h3>
+          <div className="mt-8">
+            <SourcedUnitForm
+              request={request}
+              rates={rates}
+              unit={editingUnit}
+              mutation={updateUnit}
+              onDone={() => setEditingUnit(null)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditingUnit(null)}
+            className="mt-6 text-meta text-ink underline"
+          >
+            Cancel
+          </button>
+        </section>
+      )}
 
       <section className="mt-16 border-t border-line pt-12">
         {adding ? (

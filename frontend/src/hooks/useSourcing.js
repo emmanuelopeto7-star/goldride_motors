@@ -60,6 +60,17 @@ export function useImportRequestDetail(id) {
     onSuccess: invalidate,
   })
 
+  /** Correcting a unit after it was saved - a mistyped dollar rate or a
+   *  clearing charge that came in higher. Selection and push stay on their
+   *  own endpoints, so this cannot change a unit's status by accident. */
+  const updateUnit = useMutation({
+    mutationFn: async ({ unitId, ...values }) => {
+      const res = await api.patch(`/api/staff/sourced-units/${unitId}/`, values)
+      return res.data
+    },
+    onSuccess: invalidate,
+  })
+
   const notify = useMutation({
     mutationFn: async () => {
       const res = await api.post(`/api/staff/import-requests/${id}/notify/`)
@@ -83,5 +94,5 @@ export function useImportRequestDetail(id) {
     },
   })
 
-  return { query, addUnit, notify, pushToStock }
+  return { query, addUnit, updateUnit, notify, pushToStock }
 }
