@@ -45,19 +45,66 @@ ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(',') if host.s
 RENDER_HOST = config('RENDER_EXTERNAL_HOSTNAME', default='')
 if RENDER_HOST and RENDER_HOST not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_HOST)
+elif config('RENDER', default=False, cast=bool):
+    # Belt and braces. On 2026-08-19 the live service answered its own URL with
+    # 400 DisallowedHost and ALLOWED_HOSTS holding nothing but localhost, so
+    # RENDER_EXTERNAL_HOSTNAME plainly did not arrive - it is documented but not
+    # guaranteed. RENDER itself is set on every instance, so when we know we are
+    # on Render and nobody has named the host, trust the platform's own domain.
+    # Render routes by hostname, so the only Host headers that reach this service
+    # are its own; the leading dot matches subdomains and keeps the site up
+    # rather than down while the real hostname is missing.
+    ALLOWED_HOSTS.append('.onrender.com')
 
 # Django 4+ rejects cross-origin POSTs - including the admin login - unless the
 # origin is listed here, scheme included.
+# A leading dot in ALLOWED_HOSTS is Django's subdomain wildcard; the equivalent
+# here is an explicit "*", and dropping those entries instead - as this did -
+# leaves the admin login unpostable whenever a wildcard is all we have.
 CSRF_TRUSTED_ORIGINS = [
-    f"https://{host}"
+    f"https://*{host}" if host.startswith(".") else f"https://{host}"
     for host in ALLOWED_HOSTS
-    if host not in ("localhost", "127.0.0.1", "*") and not host.startswith(".")
+    if host not in ("localhost", "127.0.0.1", "*")
 ]
 
 # Render terminates TLS at its proxy and forwards plain HTTP, so without this
 # Django believes every request is insecure: request.is_secure() returns False,
 # secure cookies are never set, and SSL redirects loop.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
+# --- HTTPS enforcement -----------------------------------------------------
+# Follows DEBUG rather than needing its own switch: turning debug off for a
+# deploy is the same decision as turning these on, and a second flag is one
+# more thing to forget. Still overridable for the awkward case of running
+# locally with DEBUG=False, where redirecting to https://localhost - which has
+# no certificate - just breaks the site.
+#
+# Every one of these depends on SECURE_PROXY_SSL_HEADER above being correct.
+# Without it Django never sees a secure request, SECURE_SSL_REDIRECT sends the
+# browser to HTTPS, the proxy forwards plain HTTP again, and it loops forever.
+SECURE_HTTPS = config('SECURE_HTTPS', default=not DEBUG, cast=bool)
+
+SECURE_SSL_REDIRECT = SECURE_HTTPS
+SESSION_COOKIE_SECURE = SECURE_HTTPS
+CSRF_COOKIE_SECURE = SECURE_HTTPS
+
+# HSTS is the one setting here that is hard to undo: browsers cache the
+# instruction to refuse plain HTTP for this domain and honour it even if the
+# header stops being sent. So it starts at an hour. Raise it deliberately -
+# a day, then a week - and only go to a year once HTTPS has been reliable for
+# a while. Setting a year on day one means a certificate problem locks
+# everybody out for a year.
+SECURE_HSTS_SECONDS = config(
+    'SECURE_HSTS_SECONDS', default=3600 if SECURE_HTTPS else 0, cast=int
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HTTPS
+
+# Deliberately off. Preloading ships the domain inside browsers themselves,
+# and getting removed takes months. Not something to enable at a one hour
+# max-age, and never worth it for a site that might yet need a plain-HTTP
+# subdomain.
+SECURE_HSTS_PRELOAD = config('SECURE_HSTS_PRELOAD', default=False, cast=bool)
 
 
 # Application definition
@@ -189,6 +236,10 @@ SPECTACULAR_SETTINGS = {
         "PurchaseMethodEnum": "purchases.models.PurchaseRequest.METHOD_CHOICES",
         "CarConditionEnum": "cars.models.Car.condition_choices",
         "CarAvailabilityEnum": "cars.models.Car.avilability_choices",
+        # Added with the sourcing models - both have a "status" and collided
+        # with each other, resolving to names like Status71bEnum.
+        "ImportRequestStatusEnum": "imports.models.ImportRequest.STATUS_CHOICES",
+        "SourcedUnitStatusEnum": "imports.models.SourcedUnit.STATUS_CHOICES",
     },
 }
 # Console stays the default so a fresh checkout and the test suite need no
@@ -201,7 +252,12 @@ EMAIL_HOST = config('EMAIL_HOST', default='')
 EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+# STARTTLS on 587 suits nearly every provider. A few only offer implicit TLS
+# on 465, which is a different mechanism - set EMAIL_USE_SSL and EMAIL_PORT
+# together for those. They are mutually exclusive; Django raises if both are
+# on, so TLS defers when SSL is asked for explicitly.
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=not EMAIL_USE_SSL, cast=bool)
 
 # Without this a mail server that accepts the connection and then hangs holds
 # the worker thread open indefinitely - and these emails are sent inline,
