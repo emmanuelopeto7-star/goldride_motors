@@ -13,7 +13,7 @@ from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from .models import Car, Favourite, HeroBanner
+from .models import Car, CarImage, Favourite, HeroBanner
 
 # Uploads in tests must not land in the real media folder - without this every
 # run leaves another hero_XXXX.jpg behind next to genuine content.
@@ -645,3 +645,76 @@ class VideoWalkthroughTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("video_url", response.data)
+
+
+@MEDIA_OVERRIDE
+class PhotoWorklistTests(APITestCase):
+    """Most of the catalogue has no photograph, and a car cannot sell from a
+    page with a blank card. Staff need to find those listings."""
+
+    def staff_client(self):
+        User = get_user_model()
+        user = User.objects.create_user("sales4", "sales4@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_the_listing_reports_how_many_photographs_it_has(self):
+        car = make_car()
+        CarImage.objects.create(
+            car=car, image=SimpleUploadedFile("a.jpg", b"not-a-real-jpeg")
+        )
+        CarImage.objects.create(
+            car=car, image=SimpleUploadedFile("b.jpg", b"not-a-real-jpeg")
+        )
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/")
+
+        self.assertEqual(response.data["results"][0]["photo_count"], 2)
+
+    def test_a_car_with_nothing_reports_zero(self):
+        make_car()
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/")
+
+        self.assertEqual(response.data["results"][0]["photo_count"], 0)
+
+    def test_staff_can_list_only_the_listings_with_no_photograph(self):
+        bare = make_car(model="Demio")
+        covered = make_car(model="Prado")
+        CarImage.objects.create(
+            car=covered, image=SimpleUploadedFile("c.jpg", b"not-a-real-jpeg")
+        )
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/?photos=none")
+
+        ids = [row["id"] for row in response.data["results"]]
+        self.assertEqual(ids, [bare.pk])
+
+    def test_a_main_image_counts_as_having_a_photograph(self):
+        """The card renders Car.image, so a listing with one is not blank even
+        with an empty gallery."""
+        car = make_car()
+        car.image = SimpleUploadedFile("main.jpg", b"not-a-real-jpeg")
+        car.save(update_fields=["image"])
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/?photos=none")
+
+        self.assertEqual(response.data["results"], [])
+
+    def test_the_opposite_filter_returns_the_covered_ones(self):
+        make_car(model="Demio")
+        covered = make_car(model="Prado")
+        CarImage.objects.create(
+            car=covered, image=SimpleUploadedFile("d.jpg", b"not-a-real-jpeg")
+        )
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/?photos=some")
+
+        ids = [row["id"] for row in response.data["results"]]
+        self.assertEqual(ids, [covered.pk])

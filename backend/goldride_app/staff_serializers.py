@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from cars.models import Car, CarImage
@@ -12,6 +13,10 @@ from payments.models import Payment
 
 class StaffCarSerializer(serializers.ModelSerializer):
     is_expired = serializers.BooleanField(read_only=True)
+    # How many gallery photographs the listing has. The single most useful
+    # column on the inventory screen right now: most of the catalogue has
+    # none, and a car cannot sell from a page with no picture.
+    photo_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Car
@@ -30,7 +35,14 @@ class StaffCarSerializer(serializers.ModelSerializer):
             "expires_at",
             "is_expired",
             "video_url",
+            "photo_count",
         ]
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_photo_count(self, car):
+        # The list view prefetches images, so this costs one query for the
+        # whole page rather than one per row.
+        return car.images.count()
 
     def validate_vin(self, vin):
         """DRF skips conditional UniqueConstraints when it builds validators, so
@@ -198,6 +210,7 @@ class StaffSourcedUnitSerializer(serializers.ModelSerializer):
             "pushed_at",
         ]
 
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
     def get_stock_price_preview(self, unit):
         """What it would list at, before anyone commits to converting it."""
         return unit.stock_price()

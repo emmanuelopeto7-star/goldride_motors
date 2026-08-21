@@ -50,7 +50,7 @@ class ManagerToDelete:
 class StaffCarListView(generics.ListCreateAPIView):
     # Deliberately not .live() - staff are the only people who can renew a
     # lapsed listing, so they are the only people who must still see it.
-    queryset = Car.objects.all().order_by("-id")
+    queryset = Car.objects.prefetch_related("images").order_by("-id")
     serializer_class = StaffCarSerializer
     permission_classes = [IsSales]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -68,6 +68,13 @@ class StaffCarListView(generics.ListCreateAPIView):
             queryset = queryset.exclude(pk__in=Car.objects.live().values("pk"))
         elif expired in ("false", "0"):
             queryset = queryset.filter(pk__in=Car.objects.live().values("pk"))
+
+        # ?photos=none is the worklist for the catalogue's biggest gap.
+        photos = self.request.query_params.get("photos")
+        if photos == "none":
+            queryset = queryset.filter(images__isnull=True, image="")
+        elif photos == "some":
+            queryset = queryset.exclude(images__isnull=True, image="")
         return queryset
 
 

@@ -22,6 +22,7 @@ export function useStaffCars({
   search = '',
   expired = '',
   availability = '',
+  photos = '',
   page = 1,
 } = {}) {
   const queryClient = useQueryClient()
@@ -30,12 +31,13 @@ export function useStaffCars({
   if (search) params.search = search
   if (expired) params.expired = expired
   if (availability) params.availability = availability
+  if (photos) params.photos = photos
   if (page > 1) params.page = page
 
   const query = useQuery({
     // The whole payload, not just results - a table showing the first twelve
     // of forty-eight with no way to reach the rest is worse than no table.
-    queryKey: ['staff-cars', search, expired, availability, page],
+    queryKey: ['staff-cars', search, expired, availability, photos, page],
     queryFn: async () => {
       const res = await api.get('/api/staff/cars/', { params })
       const data = res.data
