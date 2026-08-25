@@ -1,6 +1,9 @@
 import tempfile
 from datetime import timedelta
 from decimal import Decimal
+from io import BytesIO
+
+from PIL import Image
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -718,3 +721,165 @@ class PhotoWorklistTests(APITestCase):
 
         ids = [row["id"] for row in response.data["results"]]
         self.assertEqual(ids, [covered.pk])
+
+
+@MEDIA_OVERRIDE
+class AddingAListingTests(APITestCase):
+    """Staff adding a car to the catalogue from the dashboard.
+
+    The route existed on the API from the start - StaffCarListView is a
+    ListCreateAPIView - but nothing on the inventory screen used it, and the
+    serializer left out the whole spec sheet, so anything created this way
+    could not be filtered for on the storefront.
+    """
+
+    url = "/api/staff/cars/"
+
+    def staff_client(self, group="Sales"):
+        User = get_user_model()
+        user = User.objects.create_user(
+            f"lister{group}", f"lister{group}@goldride.co.ke", "pw"
+        )
+        Group.objects.get_or_create(name=group)[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        return user
+
+    def a_listing(self, **overrides):
+        fields = {
+            "make": "Toyota",
+            "model": "Land Cruiser",
+            "year": 2021,
+            "price": "9500000.00",
+            "description": "Imported, one owner.",
+            "body_type": "suv",
+            "fuel_type": "diesel",
+            "transmission": "automatic",
+            "drivetrain": "4wd",
+            "mileage_km": 41000,
+            "location": "Nairobi, Kenya",
+        }
+        fields.update(overrides)
+        return fields
+
+    def test_sales_can_add_a_listing(self):
+        self.staff_client()
+
+        response = self.client.post(self.url, self.a_listing())
+
+        self.assertEqual(response.status_code, 201)
+        car = Car.objects.get(pk=response.data["id"])
+        self.assertEqual(car.make, "Toyota")
+        self.assertEqual(car.body_type, "suv")
+        self.assertEqual(car.mileage_km, 41000)
+
+    def test_a_customer_cannot(self):
+        User = get_user_model()
+        user = User.objects.create_user("nosy", "nosy@example.com", "pw")
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        response = self.client.post(self.url, self.a_listing())
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_a_new_listing_is_findable_by_the_filters_the_public_uses(self):
+        """The point of carrying the spec sheet: a car nobody can filter to
+        may as well not be listed."""
+        self.staff_client()
+        self.client.post(self.url, self.a_listing())
+        self.client.credentials()
+
+        response = self.client.get("/api/cars/?body_type=suv&fuel_type=diesel")
+
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["make"], "Toyota")
+
+    def test_the_spec_reads_back_with_its_labels(self):
+        self.staff_client()
+        created = self.client.post(self.url, self.a_listing())
+        self.client.credentials()
+
+        detail = self.client.get(f"/api/cars/{created.data['id']}/")
+
+        self.assertEqual(detail.data["drivetrain_label"], "4WD")
+        self.assertEqual(detail.data["body_type_label"], "SUV")
+
+    def test_a_listing_can_be_added_with_its_photograph(self):
+        self.staff_client()
+        buffer = BytesIO()
+        Image.new("RGB", (4, 3), "white").save(buffer, format="PNG")
+        photo = SimpleUploadedFile(
+            "front.png", buffer.getvalue(), content_type="image/png"
+        )
+
+        response = self.client.post(
+            self.url, self.a_listing(image=photo), format="multipart"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Car.objects.get(pk=response.data["id"]).image)
+
+    def test_the_bare_minimum_is_enough(self):
+        """Everything but make, model, year, price and a description is
+        optional - a car gets listed before every figure is confirmed."""
+        self.staff_client()
+
+        response = self.client.post(self.url, {
+            "make": "Mazda",
+            "model": "Demio",
+            "year": 2018,
+            "price": "1150000.00",
+            "description": "Clean unit.",
+        })
+
+        self.assertEqual(response.status_code, 201)
+
+
+@MEDIA_OVERRIDE
+class PhotoCountAgreesWithTheWorklistTests(APITestCase):
+    """The column and the filter must not tell different stories.
+
+    ?photos=none deliberately treats a card image as a photograph. The count
+    beside it used to ignore it, so a listing could read "None" while the
+    worklist said it was covered.
+    """
+
+    def staff_client(self):
+        User = get_user_model()
+        user = User.objects.create_user("counter", "counter@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_a_card_image_alone_counts_as_one(self):
+        car = make_car()
+        car.image = SimpleUploadedFile("main.jpg", b"not-a-real-jpeg")
+        car.save(update_fields=["image"])
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/")
+
+        self.assertEqual(response.data["results"][0]["photo_count"], 1)
+
+    def test_the_card_image_is_counted_on_top_of_the_gallery(self):
+        car = make_car()
+        car.image = SimpleUploadedFile("main.jpg", b"not-a-real-jpeg")
+        car.save(update_fields=["image"])
+        CarImage.objects.create(
+            car=car, image=SimpleUploadedFile("g.jpg", b"not-a-real-jpeg")
+        )
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/")
+
+        self.assertEqual(response.data["results"][0]["photo_count"], 2)
+
+    def test_nothing_at_all_still_reports_zero(self):
+        make_car()
+        self.staff_client()
+
+        response = self.client.get("/api/staff/cars/")
+
+        self.assertEqual(response.data["results"][0]["photo_count"], 0)

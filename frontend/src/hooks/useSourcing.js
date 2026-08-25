@@ -14,6 +14,24 @@ export function useImportRates() {
   })
 }
 
+/** Putting new rates in force. A Manager's call - these decide what every
+ *  future quote charges - and it adds a row rather than editing one, so an
+ *  old quote can still be read back under the rates it was worked out under.
+ */
+export function useSetImportRates() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (values) => {
+      const res = await api.post('/api/staff/import-rates/', values)
+      return res.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['import-rates'] })
+    },
+  })
+}
+
 /** The sourcing worklist: requests waiting for units. */
 export function useImportRequests(status = '') {
   return useQuery({
@@ -28,6 +46,28 @@ export function useImportRequests(status = '') {
 }
 
 /** One request, plus everything you can do to it from the sourcing screen. */
+/** JSON unless a photograph is attached.
+ *
+ *  Two paths on purpose. A blank numeric has to travel as `null` to clear it,
+ *  and multipart has no null - only the empty string, which DRF rejects for a
+ *  decimal field. So the ordinary case keeps sending JSON and keeps clearing
+ *  properly; the moment a file is chosen the body becomes FormData and empty
+ *  fields are left out rather than cleared.
+ */
+function bodyFor(values) {
+  const { photo, ...rest } = values
+  if (!photo) return rest
+
+  const form = new FormData()
+  Object.entries(rest).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== '') {
+      form.append(key, value)
+    }
+  })
+  form.append('photo', photo)
+  return form
+}
+
 export function useImportRequestDetail(id) {
   const queryClient = useQueryClient()
   const key = ['staff-import-request', id]
@@ -51,10 +91,10 @@ export function useImportRequestDetail(id) {
 
   const addUnit = useMutation({
     mutationFn: async (values) => {
-      const res = await api.post('/api/staff/sourced-units/', {
-        ...values,
-        request: id,
-      })
+      const res = await api.post(
+        '/api/staff/sourced-units/',
+        bodyFor({ ...values, request: id }),
+      )
       return res.data
     },
     onSuccess: invalidate,
@@ -65,7 +105,10 @@ export function useImportRequestDetail(id) {
    *  own endpoints, so this cannot change a unit's status by accident. */
   const updateUnit = useMutation({
     mutationFn: async ({ unitId, ...values }) => {
-      const res = await api.patch(`/api/staff/sourced-units/${unitId}/`, values)
+      const res = await api.patch(
+        `/api/staff/sourced-units/${unitId}/`,
+        bodyFor(values),
+      )
       return res.data
     },
     onSuccess: invalidate,
@@ -94,5 +137,21 @@ export function useImportRequestDetail(id) {
     },
   })
 
-  return { query, addUnit, updateUnit, notify, pushToStock }
+  /** A unit added by mistake - a duplicate, or one entered against the wrong
+   *  request. Manager only, like every other delete. */
+  const removeUnit = useMutation({
+    mutationFn: (unitId) => api.delete(`/api/staff/sourced-units/${unitId}/`),
+    onSuccess: invalidate,
+  })
+
+  /** The whole request. Its units go with it, which is why this asks first. */
+  const removeRequest = useMutation({
+    mutationFn: () => api.delete(`/api/staff/import-requests/${id}/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staff-import-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+    },
+  })
+
+  return { query, addUnit, updateUnit, notify, pushToStock, removeUnit, removeRequest }
 }

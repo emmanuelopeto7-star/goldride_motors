@@ -9,5 +9,11 @@ export function errorMessages(error) {
     return [data.length > 200 || data.trimStart().startsWith('<') ? fallback : data]
   }
 
-  return Object.values(data).flat()
+  // `code` is for us to branch on, not for the customer to read. Without
+  // this a refusal renders its own machine name underneath the sentence
+  // explaining it - "protected" sitting under a perfectly good reason.
+  return Object.entries(data)
+    .filter(([key]) => key !== 'code')
+    .map(([, value]) => value)
+    .flat()
 }

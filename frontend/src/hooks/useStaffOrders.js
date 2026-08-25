@@ -67,5 +67,23 @@ export function useStaffOrders({ stage = '', cancelled = '', page = 1 } = {}) {
     onSuccess: invalidate,
   })
 
-  return { query, advance, reactivate }
+  /** Correcting an order: a mistyped phone number, a name spelt wrong, a
+   *  total agreed differently. Sales, like editing a listing - the stage is
+   *  deliberately not here, because it follows from the milestones. */
+  const update = useMutation({
+    mutationFn: async ({ orderId, ...fields }) => {
+      const res = await api.patch(`/api/staff/orders/${orderId}/`, fields)
+      return res.data
+    },
+    onSuccess: invalidate,
+  })
+
+  /** Manager only, and refused outright while the order still holds payments
+   *  - that history is the record of what the customer paid. */
+  const remove = useMutation({
+    mutationFn: (orderId) => api.delete(`/api/staff/orders/${orderId}/`),
+    onSuccess: invalidate,
+  })
+
+  return { query, advance, reactivate, update, remove }
 }

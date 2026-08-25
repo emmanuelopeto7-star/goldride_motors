@@ -3,13 +3,15 @@ from decimal import Decimal
 from django.conf import settings
 
 from drf_spectacular.utils import extend_schema, inline_serializer
-from rest_framework import filters, generics, serializers
+from django.db.models import ProtectedError
+from rest_framework import filters, generics, serializers, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from django_filters.rest_framework import DjangoFilterBackend
 
-from cars.models import Car, CarImage
+from cars.models import Car, CarImage, HeroBanner
 from imports.models import (
     ImportMilestone,
     ImportOrder,
@@ -26,6 +28,8 @@ from payments.reconciliation import reconcile_payment, reconcile_pending
 
 from .permissions import IsManager, IsSales
 from .staff_serializers import (
+    StaffImportRatesWriteSerializer,
+    StaffHeroBannerSerializer,
     StaffCarImageSerializer,
     StaffCarSerializer,
     StaffImportRequestSerializer,
@@ -37,12 +41,33 @@ from .staff_serializers import (
 
 
 class ManagerToDelete:
-    """Sales may read and edit; only a Manager may delete."""
+    """Sales may read and edit; only a Manager may delete.
+
+    Deleting also has to answer for what the row is holding up. Half of these
+    models are referenced with PROTECT - a car by its purchase requests, an
+    order by its payments - and an unguarded destroy turns that into a 500 and
+    a stack trace. The record being protected is usually the correct answer,
+    so the refusal says which one rather than failing blankly.
+    """
 
     def get_permissions(self):
         if self.request.method == "DELETE":
             return [IsManager()]
         return [IsSales()]
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError as protected:
+            blockers = sorted({obj._meta.verbose_name for obj in protected.protected_objects})
+            raise ValidationError({
+                "detail": (
+                    "This cannot be deleted while it still has "
+                    f"{', '.join(blockers)} attached. That history is the "
+                    "record of what happened and is kept on purpose."
+                ),
+                "code": "protected",
+            })
 
 
 # --- cars ------------------------------------------------------------------
@@ -459,7 +484,13 @@ class StaffImportRatesView(APIView):
     somebody noticed.
     """
 
-    permission_classes = [IsSales]
+    # Reading them is Sales - the sourcing screen needs them to preview a
+    # total. Writing them is a Manager: these decide what every future quote
+    # charges a customer.
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsManager()]
+        return [IsSales()]
 
     @extend_schema(
         responses={200: inline_serializer('ImportRates', {
@@ -474,8 +505,28 @@ class StaffImportRatesView(APIView):
         description="KRA rates and the default stock markup, as percentages.",
     )
     def get(self, request):
-        rates = ImportRates.current()
-        return Response({
+        return Response(self._as_percentages(ImportRates.current()))
+
+    @extend_schema(
+        request=StaffImportRatesWriteSerializer,
+        responses={201: StaffImportRatesWriteSerializer},
+        description="Put new rates in force from a given date. Manager only. "
+                    "This adds a row rather than editing one: an old quote "
+                    "has the rates it was worked out under copied onto it, "
+                    "and the record of what was charged has to stay readable.",
+    )
+    def post(self, request):
+        serializer = StaffImportRatesWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            self._as_percentages(ImportRates.current()),
+            status=status.HTTP_201_CREATED,
+        )
+
+    @staticmethod
+    def _as_percentages(rates):
+        return {
             "duty": rates.duty_rate,
             "excise_default": rates.excise_rate,
             "vat": rates.vat_rate,
@@ -483,4 +534,32 @@ class StaffImportRatesView(APIView):
             "rdl": rates.rdl_rate,
             "stock_markup": rates.stock_markup,
             "effective_from": rates.effective_from,
-        })
+        }
+
+
+class HeroBannerMixin:
+    """Both hero views need the same answer to "which one is actually live?"."""
+
+    permission_classes = [IsSales]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        live = HeroBanner.objects.filter(is_active=True).first()
+        context["live_pk"] = live.pk if live else None
+        return context
+
+
+class StaffHeroBannerListView(HeroBannerMixin, generics.ListCreateAPIView):
+    """Swapping the home page hero without a deploy - or, until now, without
+    the Django admin, which was the only place this could be done."""
+
+    queryset = HeroBanner.objects.all()
+    serializer_class = StaffHeroBannerSerializer
+    pagination_class = None
+
+
+class StaffHeroBannerDetailView(
+    HeroBannerMixin, ManagerToDelete, generics.RetrieveUpdateDestroyAPIView
+):
+    queryset = HeroBanner.objects.all()
+    serializer_class = StaffHeroBannerSerializer

@@ -1,3 +1,5 @@
+import ConfirmModal from '../../components/ConfirmModal'
+import OrderEditModal from '../../components/OrderEditModal'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AdvanceStageModal from '../../components/AdvanceStageModal'
@@ -6,6 +8,7 @@ import ErrorState from '../../components/ErrorState'
 import Pagination from '../../components/Pagination'
 import ReactivateOrderModal from '../../components/ReactivateOrderModal'
 import { formatPrice } from '../../lib/format'
+import { useAuth } from '../../context/AuthContext'
 import { STAGES, nextStage, useStaffOrders } from '../../hooks/useStaffOrders'
 
 const VIEWS = [
@@ -53,7 +56,14 @@ function StaffOrders() {
   const [advancing, setAdvancing] = useState(null)
   const [reviving, setReviving] = useState(null)
 
-  const { query, advance, reactivate } = useStaffOrders({ stage, cancelled, page })
+  const { query, advance, reactivate, update, remove } = useStaffOrders({
+    stage,
+    cancelled,
+    page,
+  })
+  const { isManager } = useAuth()
+  const [editing, setEditing] = useState(null)
+  const [deleting, setDeleting] = useState(null)
   const orders = query.data?.results ?? []
 
   function selectView(nextStageValue, nextCancelled) {
@@ -203,6 +213,30 @@ function StaffOrders() {
                         >
                           What the customer sees
                         </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            update.reset()
+                            setEditing(order)
+                          }}
+                          className="text-meta text-ink underline"
+                        >
+                          Edit
+                        </button>
+                        {/* Manager only, and the API refuses outright while
+                            the order still holds payments. */}
+                        {isManager && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              remove.reset()
+                              setDeleting(order)
+                            }}
+                            className="text-meta text-ink-soft underline"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -218,6 +252,26 @@ function StaffOrders() {
           count={query.data.count}
           hasNext={Boolean(query.data.next)}
           hasPrevious={Boolean(query.data.previous)}
+        />
+      )}
+
+      {editing && (
+        <OrderEditModal
+          order={editing}
+          mutation={update}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete this order?"
+          body={`${deleting.customer_name}'s order for ${deleting.car_description} will be removed. The customer's tracking link stops working.`}
+          mutation={remove}
+          onConfirm={() =>
+            remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })
+          }
+          onClose={() => setDeleting(null)}
         />
       )}
 

@@ -46,6 +46,9 @@ function SourcedUnitForm({ request, rates, mutation, onDone, unit = null }) {
     customs_value_kes: unit?.customs_value_kes ?? '',
     clearing_kes: unit?.clearing_kes ?? '',
     service_fee_kes: unit?.service_fee_kes ?? '',
+    // A file input cannot be pre-filled, so this always starts empty even
+    // when editing a unit that already has a photograph.
+    photo: null,
   }))
 
   function set(field) {
@@ -98,6 +101,30 @@ function SourcedUnitForm({ request, rates, mutation, onDone, unit = null }) {
             <Field id="u-grade" label="Auction grade" value={values.grade} onChange={set('grade')} placeholder="4.5" />
             <Field id="u-colour" label="Colour" value={values.exterior_colour} onChange={set('exterior_colour')} />
             <Field id="u-sheet" label="Auction sheet URL" type="url" value={values.auction_sheet_url} onChange={set('auction_sheet_url')} />
+
+            {/* Worth attaching now rather than later: pushing a rejected unit
+                to stock copies this photograph onto the listing, and most of
+                the catalogue has none. */}
+            <div className="sm:col-span-2">
+              <label htmlFor="u-photo" className={labelClass}>Photograph</label>
+              <input
+                id="u-photo"
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    photo: event.target.files[0] ?? null,
+                  }))
+                }
+                className="mt-2 w-full border border-line bg-surface p-3 text-meta"
+              />
+              <p className="mt-2 text-meta text-ink-mute">
+                {unit?.photo && !values.photo
+                  ? 'One is already on file. Choosing another replaces it.'
+                  : 'Becomes the listing photograph if this unit is pushed to stock.'}
+              </p>
+            </div>
           </div>
         </fieldset>
 

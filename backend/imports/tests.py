@@ -7,6 +7,9 @@ an offer against one.
 
 from datetime import timedelta
 from decimal import Decimal
+from io import BytesIO
+
+from PIL import Image
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -999,3 +1002,92 @@ class ImportRatesEndpointTests(APITestCase):
         response = self.client.get("/api/staff/import-rates/")
 
         self.assertIn(response.status_code, (401, 403))
+
+
+@MEDIA_OVERRIDE
+class SourcedUnitPhotographTests(APITestCase):
+    """A unit arrives with pictures, and staff had no way to attach one.
+
+    The field existed on the model and in the serializer the whole time - the
+    only route to it was the Django admin, one row at a time. It matters more
+    than a nicety: pushing a rejected unit to stock copies this photograph
+    onto the listing, and most of the catalogue has none.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+        user = User.objects.create_user("photog", "p@goldride.co.ke", "pw")
+        Group.objects.get_or_create(name="Manager")[0].user_set.add(user)
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.request = a_request()
+
+    def a_photo(self, name="auction.png"):
+        # A real image, not a few bytes pretending: the serializer runs
+        # Pillow over an ImageField and rejects anything it cannot open.
+        buffer = BytesIO()
+        Image.new("RGB", (2, 2), "white").save(buffer, format="PNG")
+        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+    def test_a_unit_can_be_added_with_a_photograph(self):
+        response = self.client.post(
+            "/api/staff/sourced-units/",
+            {
+                "request": self.request.pk,
+                "make": "Toyota",
+                "model": "Prado",
+                "year": timezone.now().year - 4,
+                "unit_price_usd": "12000.00",
+                "dollar_rate": "130.00",
+                "photo": self.a_photo(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        unit = SourcedUnit.objects.get(pk=response.data["id"])
+        self.assertTrue(unit.photo)
+        self.assertIn("auction", unit.photo.name)
+
+    def test_a_photograph_can_be_added_to_a_unit_that_had_none(self):
+        unit = a_unit(request=self.request)
+        self.assertFalse(unit.photo)
+
+        response = self.client.patch(
+            f"/api/staff/sourced-units/{unit.pk}/",
+            {"photo": self.a_photo("later.png")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        unit.refresh_from_db()
+        self.assertTrue(unit.photo)
+
+    def test_the_photograph_follows_the_unit_into_stock(self):
+        """The reason to attach it at sourcing rather than after listing."""
+        unit = a_unit(request=self.request)
+        unit.photo = self.a_photo("keeper.png")
+        unit.save(update_fields=["photo"])
+
+        car, outcome = unit.push_to_stock()
+
+        self.assertEqual(outcome, "listed")
+        self.assertTrue(car.image)
+        self.assertIn("keeper", car.image.name)
+
+    def test_a_unit_without_a_photograph_still_saves(self):
+        """Most of the numbers matter more than the picture - it stays optional."""
+        response = self.client.post(
+            "/api/staff/sourced-units/",
+            {
+                "request": self.request.pk,
+                "make": "Toyota",
+                "model": "Hilux",
+                "year": timezone.now().year - 3,
+                "unit_price_usd": "9000.00",
+                "dollar_rate": "129.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(SourcedUnit.objects.get(pk=response.data["id"]).photo)

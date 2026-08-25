@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import CarCreateModal from '../../components/CarCreateModal'
 import CarEditModal from '../../components/CarEditModal'
+import ConfirmModal from '../../components/ConfirmModal'
 import CarPhotosModal from '../../components/CarPhotosModal'
 import EmptyState from '../../components/EmptyState'
 import Pagination from '../../components/Pagination'
 import ErrorState from '../../components/ErrorState'
 import { counted, formatPrice, pluralise } from '../../lib/format'
+import { useAuth } from '../../context/AuthContext'
 import {
   EXPIRING_SOON_DAYS,
   daysUntilExpiry,
@@ -17,6 +20,14 @@ const VIEWS = [
   ['', 'All'],
   ['true', 'Expired'],
   ['false', 'Live'],
+]
+
+/** Toggles rather than a second All/Expired/Live row: these cut across the
+ *  listing filters instead of replacing them, and a nav with two "All"
+ *  buttons reads as a mistake. Clicking the active one clears it. */
+const PHOTO_VIEWS = [
+  ['none', 'No photographs'],
+  ['some', 'Has photographs'],
 ]
 
 function ExpiryCell({ car, onRenew, isRenewing }) {
@@ -70,9 +81,12 @@ function StaffInventory() {
   const [term, setTerm] = useState(search)
   const [editing, setEditing] = useState(null)
   const [photographing, setPhotographing] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const [deleting, setDeleting] = useState(null)
+  const { isManager } = useAuth()
   const page = Math.max(1, Number(searchParams.get('page') ?? 1))
 
-  const { query, extend, update } = useStaffCars({ search, expired, photos, page })
+  const { query, extend, update, create, remove } = useStaffCars({ search, expired, photos, page })
 
   function setParam(next) {
     // Page is deliberately dropped: changing a filter or a search puts you on
@@ -105,7 +119,36 @@ function StaffInventory() {
               {label}
             </button>
           ))}
+
+          <span aria-hidden="true" className="text-ink-mute">·</span>
+
+          {PHOTO_VIEWS.map(([value, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setParam({ photos: photos === value ? '' : value })}
+              className={`text-meta transition-colors ${
+                photos === value ? 'text-ink underline' : 'text-ink-soft hover:text-ink'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </nav>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              // Clearing first, or the form opens showing the last attempt's
+              // errors under empty fields.
+              create.reset()
+              setAdding(true)
+            }}
+            className="h-11 bg-ink px-6 text-badge uppercase text-surface"
+          >
+            Add a listing
+          </button>
 
         <form
           onSubmit={(event) => {
@@ -121,6 +164,7 @@ function StaffInventory() {
             className="h-10 w-[280px] rounded-full bg-search px-5 text-meta outline-none placeholder:text-ink-mute"
           />
         </form>
+        </div>
       </div>
 
       {needingAttention > 0 && expired !== 'true' && (
@@ -212,6 +256,20 @@ function StaffInventory() {
                       >
                         Edit
                       </button>
+                      {/* Only a Manager may delete - the API refuses Sales,
+                          so offering it would be a promise it breaks. */}
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            remove.reset()
+                            setDeleting(car)
+                          }}
+                          className="ml-4 text-ink-soft underline"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -226,6 +284,26 @@ function StaffInventory() {
           count={query.data.count}
           hasNext={Boolean(query.data.next)}
           hasPrevious={Boolean(query.data.previous)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete this listing?"
+          body={`${deleting.year} ${deleting.make} ${deleting.model} will be removed from the catalogue. This cannot be undone.`}
+          mutation={remove}
+          onConfirm={() =>
+            remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })
+          }
+          onClose={() => setDeleting(null)}
+        />
+      )}
+
+      {adding && (
+        <CarCreateModal
+          mutation={create}
+          onClose={() => setAdding(false)}
+          onCreated={(car) => setPhotographing(car)}
         />
       )}
 

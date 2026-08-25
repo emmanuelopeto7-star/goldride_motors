@@ -18,6 +18,27 @@ export function expiryState(car) {
   return daysUntilExpiry(car) <= EXPIRING_SOON_DAYS ? 'soon' : 'live'
 }
 
+/** Multipart only when a photograph is attached.
+ *
+ *  Same reasoning as the sourced-unit form: multipart carries no null, so a
+ *  blank optional field would have to travel as the empty string, which DRF
+ *  refuses for a number. JSON stays the default and empty values are dropped
+ *  either way - a new listing simply takes the model's own defaults for
+ *  anything left blank.
+ */
+function bodyFor(values) {
+  const { image, ...rest } = values
+  const filled = Object.fromEntries(
+    Object.entries(rest).filter(([, value]) => value !== '' && value != null),
+  )
+  if (!image) return filled
+
+  const form = new FormData()
+  Object.entries(filled).forEach(([key, value]) => form.append(key, value))
+  form.append('image', image)
+  return form
+}
+
 export function useStaffCars({
   search = '',
   expired = '',
@@ -74,5 +95,18 @@ export function useStaffCars({
     onSuccess: invalidate,
   })
 
-  return { query, extend, update }
+  const create = useMutation({
+    mutationFn: async (values) => {
+      const res = await api.post('/api/staff/cars/', bodyFor(values))
+      return res.data
+    },
+    onSuccess: invalidate,
+  })
+
+  const remove = useMutation({
+    mutationFn: (id) => api.delete(`/api/staff/cars/${id}/`),
+    onSuccess: invalidate,
+  })
+
+  return { query, extend, update, create, remove }
 }

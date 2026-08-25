@@ -1,3 +1,12 @@
+from imports.models import ImportOrder
+from payments.models import Payment
+import tempfile
+from io import BytesIO
+from PIL import Image
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
+from cars.models import HeroBanner
+from imports.models import ImportRates
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -837,3 +846,218 @@ class SocialAccountModelTests(APITestCase):
         SocialAccount.objects.create(provider="linkedin", uid="same", user=user)
 
         self.assertEqual(user.social_accounts.count(), 2)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class HeroBannerFromTheDashboardTests(APITestCase):
+    """Swapping the home page hero used to mean opening the Django admin."""
+
+    url = "/api/staff/hero-banners/"
+
+    def sign_in(self, group):
+        User = get_user_model()
+        user = User.objects.create_user(f"hero{group}", f"hero{group}@x.com", "pw")
+        Group.objects.get_or_create(name=group)[0].user_set.add(user)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=user).key}"
+        )
+        return user
+
+    def an_image(self, name="hero.png"):
+        buffer = BytesIO()
+        Image.new("RGB", (8, 4), "white").save(buffer, format="PNG")
+        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+    def test_sales_can_put_up_a_new_hero(self):
+        self.sign_in("Sales")
+
+        response = self.client.post(self.url, {
+            "image": self.an_image(),
+            "headline": "Imported, cleared, delivered.",
+            "subline": "Sourcing to your door.",
+            "is_active": True,
+        }, format="multipart")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(HeroBanner.objects.count(), 1)
+
+    def test_the_public_page_serves_it(self):
+        self.sign_in("Sales")
+        self.client.post(self.url, {
+            "image": self.an_image(),
+            "headline": "Imported, cleared, delivered.",
+            "is_active": True,
+        }, format="multipart")
+        self.client.credentials()
+
+        response = self.client.get("/api/hero/")
+
+        self.assertEqual(response.data["headline"], "Imported, cleared, delivered.")
+
+    def test_only_one_banner_is_reported_live(self):
+        """Several may be active; the most recently updated one wins, and the
+        screen has to say which rather than leave staff to work it out."""
+        self.sign_in("Sales")
+        older = HeroBanner.objects.create(
+            image=self.an_image("a.png"), headline="Older", is_active=True
+        )
+        newer = HeroBanner.objects.create(
+            image=self.an_image("b.png"), headline="Newer", is_active=True
+        )
+
+        rows = self.client.get(self.url).data
+
+        live = {row["id"]: row["is_live"] for row in rows}
+        self.assertTrue(live[newer.pk])
+        self.assertFalse(live[older.pk])
+
+    def test_a_customer_cannot_touch_the_hero(self):
+        User = get_user_model()
+        user = User.objects.create_user("shopper", "shopper@x.com", "pw")
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(user)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=user).key}"
+        )
+
+        response = self.client.post(self.url, {"headline": "Mine now"})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_only_a_manager_may_delete_one(self):
+        self.sign_in("Sales")
+        banner = HeroBanner.objects.create(
+            image=self.an_image(), headline="Retire me", is_active=False
+        )
+
+        response = self.client.delete(f"{self.url}{banner.pk}/")
+
+        self.assertEqual(response.status_code, 403)
+
+
+class ImportRatesFromTheDashboardTests(APITestCase):
+    """Budget day should not need a developer, or the Django admin."""
+
+    url = "/api/staff/import-rates/"
+
+    def sign_in(self, group):
+        User = get_user_model()
+        user = User.objects.create_user(f"rates{group}", f"rates{group}@x.com", "pw")
+        Group.objects.get_or_create(name=group)[0].user_set.add(user)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=user).key}"
+        )
+
+    def new_rates(self, **overrides):
+        fields = {
+            "duty_rate": "30.00",
+            "excise_rate": "25.00",
+            "vat_rate": "16.00",
+            "idf_rate": "3.50",
+            "rdl_rate": "2.00",
+            "stock_markup": "15.00",
+            "effective_from": str(timezone.now().date()),
+            "note": "Finance Act.",
+        }
+        fields.update(overrides)
+        return fields
+
+    def test_a_manager_can_put_new_rates_in_force(self):
+        self.sign_in("Manager")
+
+        response = self.client.post(self.url, self.new_rates())
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(str(response.data["duty"]), "30.00")
+
+    def test_sales_may_read_but_not_change_them(self):
+        self.sign_in("Sales")
+
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.assertEqual(
+            self.client.post(self.url, self.new_rates()).status_code, 403
+        )
+
+    def test_the_old_rates_are_kept_rather_than_overwritten(self):
+        """An old quote copied its rates onto itself; the record of what it
+        was worked out under has to stay readable."""
+        self.sign_in("Manager")
+        # Relative: the table is not necessarily empty to begin with.
+        before = ImportRates.objects.count()
+
+        self.client.post(self.url, self.new_rates(duty_rate="30.00"))
+        self.client.post(self.url, self.new_rates(duty_rate="35.00"))
+
+        self.assertEqual(ImportRates.objects.count(), before + 2)
+        self.assertEqual(str(ImportRates.current().duty_rate), "35.00")
+
+
+class ProtectedDeleteTests(APITestCase):
+    """Deleting has to answer for what the row is holding up.
+
+    A car is referenced by its purchase requests with PROTECT, an order by its
+    payments. Without a guard the database raises and the manager gets a 500
+    and a stack trace instead of a reason.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+        self.manager = User.objects.create_user("delboss", "delboss@x.com", "pw")
+        Group.objects.get_or_create(name="Manager")[0].user_set.add(self.manager)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.manager).key}"
+        )
+        self.car = Car.objects.create(
+            make="Toyota", model="Prado", year=2019,
+            price=Decimal("4250000.00"), description="A car.",
+        )
+
+    def test_a_car_nothing_depends_on_can_be_deleted(self):
+        response = self.client.delete(f"/api/staff/cars/{self.car.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Car.objects.filter(pk=self.car.pk).exists())
+
+    def test_a_car_with_a_purchase_request_is_refused_with_a_reason(self):
+        User = get_user_model()
+        buyer = User.objects.create_user("delbuyer", "delbuyer@x.com", "pw")
+        PurchaseRequest.objects.create(
+            customer=buyer, car=self.car, preferred_method="card",
+            phone="0712345678",
+        )
+
+        response = self.client.delete(f"/api/staff/cars/{self.car.pk}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "protected")
+        self.assertIn("purchase request", str(response.data["detail"]))
+        self.assertTrue(Car.objects.filter(pk=self.car.pk).exists())
+
+    def test_a_car_with_enquiries_is_refused_rather_than_taking_them_with_it(self):
+        """This used to return 204 and silently destroy the exchange: the
+        customer's question, the reply, who sent it, and the ticket."""
+        from inquiries.models import Inquiry
+
+        enquiry = Inquiry.objects.create(
+            car=self.car, name="Wanjiru", phone="0712345678",
+            email="w@example.com", message="Still available?",
+        )
+
+        response = self.client.delete(f"/api/staff/cars/{self.car.pk}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("inquiry", str(response.data["detail"]).lower())
+        self.assertTrue(Inquiry.objects.filter(pk=enquiry.pk).exists())
+        self.assertTrue(Car.objects.filter(pk=self.car.pk).exists())
+
+    def test_an_order_with_a_payment_is_refused_with_a_reason(self):
+        order = ImportOrder.objects.create(
+            customer_name="Wanjiru", phone="0712345678",
+            car_description="2019 Toyota Prado", total_amount=Decimal("4250000.00"),
+        )
+        Payment.objects.create(order=order, amount=Decimal("100.00"), method="card")
+
+        response = self.client.delete(f"/api/staff/orders/{order.pk}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("payment", str(response.data["detail"]))
+        self.assertTrue(ImportOrder.objects.filter(pk=order.pk).exists())
