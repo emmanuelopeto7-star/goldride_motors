@@ -69,25 +69,49 @@ class MyPaymentDispatchView(APIView):
 
 
 class InitiatePaymentView(APIView):
+    """A checkout link for one of your own pending invoices.
+
+    This had no permission class at all, which in DRF means anyone at all.
+    Worse, it took the receipt address from the request body: hand it a
+    reference and your own email and Paystack sent you the checkout for
+    somebody else's invoice. The amount was always read from the database, so
+    the sum could not be tampered with - but who was being asked to pay, and
+    where the receipt landed, could be.
+
+    Both halves are closed here. The caller must be signed in, the invoice is
+    looked up against their own orders, and the address is theirs rather than
+    whatever was typed into the request.
+    """
+
+    permission_classes = [IsCustomer]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "payments"
 
     @extend_schema(
         request=InitiatePaymentRequestSerializer,
         responses={200: CheckoutResponseSerializer},
-        description="Exchange a payment reference for a Paystack checkout URL. "
-                    "The amount is read from the database, never from the request.",
+        description="Exchange one of your own payment references for a Paystack "
+                    "checkout URL. The amount is read from the database, never "
+                    "from the request, and the receipt goes to your account's "
+                    "own email address.",
     )
     def post(self, request):
-        reference=request.data.get("reference")
-        email=request.data.get("email")
-        if not reference or not email:
-            return Response({"error": "reference and email are required"}, status=400)
+        reference = request.data.get("reference")
+        if not reference:
+            return Response({"error": "reference is required"}, status=400)
+
         try:
-            payment = Payment.objects.get(reference=reference, status="pending")
-        except Payment.DoesNotExist:
+            payment = Payment.objects.get(
+                reference=reference,
+                status="pending",
+                order__customer=request.user,
+            )
+        except (Payment.DoesNotExist, ValidationError, ValueError):
+            # Same answer either way: a reference that is not yours must not be
+            # distinguishable from one that does not exist.
             return Response({"error": "payment not found"}, status=404)
-        url = start_paystack_payment(payment, email)
+
+        url = start_paystack_payment(payment, request.user.email)
         if url is None:
             return Response({"error": "could not start payment"}, status=502)
         return Response({"checkout_url": url})

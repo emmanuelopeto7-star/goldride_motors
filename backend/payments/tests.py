@@ -19,10 +19,13 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from cars.models import Car
@@ -511,13 +514,26 @@ class MpesaReconciliationTests(APITestCase):
 
 
 class InitiatePaymentTests(APITestCase):
-    """The server decides the amount - the client only names the invoice."""
+    """The server decides the amount, and whose invoice it is.
+
+    The client names an invoice it already owns; everything else - the sum,
+    the address the receipt goes to - comes from the database and the signed-in
+    account.
+    """
 
     URL = "/api/payments/initiate/"
 
     def setUp(self):
         cache.clear()
-        self.payment = a_payment()
+        User = get_user_model()
+        self.customer = User.objects.create_user(
+            "amina", "amina@example.com", "pw"
+        )
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(self.customer)
+        self.payment = a_payment(order=an_order(customer=self.customer))
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.customer).key}"
+        )
 
     @patch("payments.services.requests.post")
     def test_the_amount_comes_from_the_database(self, post):
@@ -530,7 +546,7 @@ class InitiatePaymentTests(APITestCase):
             self.URL,
             {
                 "reference": str(self.payment.reference),
-                "email": "amina@example.com",
+                "email": "someone-else@example.com",  # ignored
                 "amount": 1,  # ignored
             },
             format="json",
@@ -546,7 +562,7 @@ class InitiatePaymentTests(APITestCase):
             "status": True,
             "data": {"authorization_url": "https://checkout.paystack.com/abc"},
         }
-        body = {"reference": str(self.payment.reference), "email": "amina@example.com"}
+        body = {"reference": str(self.payment.reference)}
 
         self.client.post(self.URL, body, format="json")
         self.payment.refresh_from_db()
@@ -569,7 +585,7 @@ class InitiatePaymentTests(APITestCase):
 
         response = self.client.post(
             self.URL,
-            {"reference": str(self.payment.reference), "email": "amina@example.com"},
+            {"reference": str(self.payment.reference)},
             format="json",
         )
 
@@ -580,7 +596,7 @@ class InitiatePaymentTests(APITestCase):
 
         response = self.client.post(
             self.URL,
-            {"reference": str(uuid.uuid4()), "email": "amina@example.com"},
+            {"reference": str(uuid.uuid4())},
             format="json",
         )
 
@@ -592,17 +608,61 @@ class InitiatePaymentTests(APITestCase):
 
         response = self.client.post(
             self.URL,
-            {"reference": str(self.payment.reference), "email": "amina@example.com"},
+            {"reference": str(self.payment.reference)},
             format="json",
         )
 
         self.assertEqual(response.status_code, 404)
 
-    def test_the_required_fields_are_required(self):
-        for body in [{}, {"reference": str(self.payment.reference)}, {"email": "a@b.com"}]:
-            with self.subTest(body=body):
-                response = self.client.post(self.URL, body, format="json")
-                self.assertEqual(response.status_code, 400)
+    def test_a_reference_is_required(self):
+        """The email used to be required too - and was the hole: it named
+        where the receipt went, and the caller chose it."""
+        response = self.client.post(self.URL, {}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_the_receipt_goes_to_the_account_not_the_request(self, ):
+        with patch("payments.services.requests.post") as post:
+            post.return_value.json.return_value = {
+                "status": True,
+                "data": {"authorization_url": "https://checkout.paystack.com/abc"},
+            }
+
+            self.client.post(
+                self.URL,
+                {
+                    "reference": str(self.payment.reference),
+                    "email": "attacker@example.com",
+                },
+                format="json",
+            )
+
+        self.assertEqual(post.call_args.kwargs["json"]["email"], "amina@example.com")
+
+    def test_a_stranger_cannot_start_a_checkout(self):
+        self.client.credentials()
+
+        response = self.client.post(
+            self.URL, {"reference": str(self.payment.reference)}, format="json"
+        )
+
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_another_customers_invoice_is_not_found(self):
+        """Not "forbidden" - a reference that is not yours must look exactly
+        like one that does not exist, or the endpoint becomes an oracle."""
+        User = get_user_model()
+        nosy = User.objects.create_user("nosy", "nosy@example.com", "pw")
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(nosy)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=nosy).key}"
+        )
+
+        response = self.client.post(
+            self.URL, {"reference": str(self.payment.reference)}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 404)
 
 
 class CheckoutNotificationTests(APITestCase):
