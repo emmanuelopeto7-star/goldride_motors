@@ -15,12 +15,16 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core import mail
 from django.test import TestCase
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APITestCase
 
 from cars.models import Car
+from imports.models import ImportOrder
 from payments.models import Payment
+from tickets.models import Ticket
 
 from .models import PurchaseRequest
-from .services import approve_request
+from .services import approve_request, reject_request
 
 DISPATCH = "purchases.services.dispatch_payment"
 
@@ -150,3 +154,145 @@ class ApprovalNotifiesTheCustomerTests(TestCase):
         self.assertEqual([m for m in mail.outbox if m.to == [""]], [])
         payment.refresh_from_db()
         self.assertIsNone(payment.checkout_sent_at)
+
+
+User = get_user_model()
+
+
+class StaffPurchaseRequestDetailTests(APITestCase):
+    """A ticket points at its subject by id, so the subject needs an address."""
+
+    def setUp(self):
+        self.car = Car.objects.create(
+            make="Toyota", model="Prado", year=2019,
+            price=Decimal("4250000.00"), description="A car.",
+        )
+        self.customer = User.objects.create_user("buyer", "buyer@x.com", "pw")
+        self.request = PurchaseRequest.objects.create(
+            customer=self.customer, car=self.car,
+            preferred_method="card", phone="0712345678",
+        )
+        self.sales = User.objects.create_user("sales9", "sales9@x.com", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(self.sales)
+
+    def test_sales_can_read_one_request(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.sales).key}"
+        )
+
+        response = self.client.get(f"/api/purchases/staff/{self.request.pk}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], self.request.pk)
+        self.assertEqual(response.data["car_title"], "2019 Toyota Prado")
+
+    def test_a_customer_cannot(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.customer).key}"
+        )
+
+        response = self.client.get(f"/api/purchases/staff/{self.request.pk}/")
+
+        self.assertEqual(response.status_code, 403)
+
+
+class TwoManagersAtOnceTests(TestCase):
+    """One request, two managers, the same moment.
+
+    Each holds a copy of the row read before either clicked, so both copies
+    say "pending" - which is precisely what a Python-side `if` believes. Only
+    one may get through, or the customer is asked to pay twice for one car.
+    """
+
+    def setUp(self):
+        self.car = Car.objects.create(
+            make="Toyota", model="Prado", year=2019,
+            price=Decimal("4250000.00"), description="A car.",
+        )
+        self.customer = User.objects.create_user("twice", "twice@x.com", "pw")
+        self.asha = User.objects.create_user("m_asha", "asha@x.com", "pw")
+        self.brian = User.objects.create_user("m_brian", "brian@x.com", "pw")
+        self.request = PurchaseRequest.objects.create(
+            customer=self.customer, car=self.car,
+            preferred_method="card", phone="0712345678",
+        )
+
+    def stale_pair(self):
+        """Two copies, both read while the request was still pending."""
+        first = PurchaseRequest.objects.get(pk=self.request.pk)
+        second = PurchaseRequest.objects.get(pk=self.request.pk)
+        self.assertEqual(first.status, "pending")
+        self.assertEqual(second.status, "pending")
+        return first, second
+
+    @patch(DISPATCH)
+    def test_the_second_approval_is_refused(self, dispatch):
+        dispatch.return_value = (True, "https://checkout.example/1")
+        first, second = self.stale_pair()
+
+        payment, _, _ = approve_request(first, reviewed_by=self.asha)
+        refused, dispatched, detail = approve_request(second, reviewed_by=self.brian)
+
+        self.assertIsNotNone(payment)
+        self.assertIsNone(refused)
+        self.assertFalse(dispatched)
+        self.assertIn("already been reviewed", detail)
+
+    @patch(DISPATCH)
+    def test_the_customer_gets_one_order_one_payment_one_email(self, dispatch):
+        # Writes the checkout URL onto the payment the way the real dispatch
+        # does - without it there is nothing to put in the email and none is
+        # sent, which would make this pass for the wrong reason.
+        def dispatched(payment, email=None, phone=None):
+            payment.checkout_url = "https://checkout.example/1"
+            payment.save(update_fields=["checkout_url"])
+            return True, payment.checkout_url
+
+        dispatch.side_effect = dispatched
+        first, second = self.stale_pair()
+        mail.outbox = []
+
+        approve_request(first, reviewed_by=self.asha)
+        approve_request(second, reviewed_by=self.brian)
+
+        self.assertEqual(ImportOrder.objects.count(), 1)
+        self.assertEqual(Payment.objects.count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    @patch(DISPATCH)
+    def test_a_rejection_cannot_overwrite_an_approval(self, dispatch):
+        """The decision note is the record of what the customer was told."""
+        dispatch.return_value = (True, "https://checkout.example/1")
+        first, second = self.stale_pair()
+
+        approve_request(first, reviewed_by=self.asha, note="Cleared funds.")
+        rejected, detail = reject_request(second, reviewed_by=self.brian, note="No.")
+
+        self.assertFalse(rejected)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "approved")
+        self.assertEqual(self.request.decision_note, "Cleared funds.")
+        self.assertEqual(self.request.reviewed_by, self.asha)
+
+    def test_the_second_rejection_is_refused(self):
+        first, second = self.stale_pair()
+
+        reject_request(first, reviewed_by=self.asha, note="Sold elsewhere.")
+        rejected, detail = reject_request(second, reviewed_by=self.brian, note="No.")
+
+        self.assertFalse(rejected)
+        self.assertIn("already been reviewed", detail)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.decision_note, "Sold elsewhere.")
+
+    @patch(DISPATCH)
+    def test_only_one_ticket_close_happens(self, dispatch):
+        """The ticket follows the decision, so it must not be settled twice."""
+        dispatch.return_value = (True, "https://checkout.example/1")
+        first, second = self.stale_pair()
+
+        approve_request(first, reviewed_by=self.asha)
+        approve_request(second, reviewed_by=self.brian)
+
+        ticket = Ticket.objects.get(purchase_request=self.request)
+        self.assertEqual(ticket.status, Ticket.CLOSED)

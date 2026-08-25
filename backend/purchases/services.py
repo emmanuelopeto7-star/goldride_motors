@@ -9,6 +9,8 @@ from payments.notifications import send_payment_instructions
 
 from goldride_app.mail import send as send_mail
 
+from .models import PurchaseRequest
+
 
 def notify_sales(purchase_request):
     send_mail(
@@ -27,7 +29,24 @@ def notify_sales(purchase_request):
 
 @transaction.atomic
 def approve_request(purchase_request, reviewed_by, note=""):
-    if purchase_request.status != "pending":
+    # Re-read the status from the database under a row lock rather than
+    # trusting the copy handed in. The caller fetched that copy before this
+    # transaction opened, so two managers clicking Approve at the same moment
+    # both hold an object saying "pending" - and a plain `if` believes both.
+    # Each would create an order, a payment and a checkout link, and the
+    # customer would be asked to pay twice for one car.
+    #
+    # The lock is held until this transaction commits, which includes the call
+    # out to Paystack or Daraja. That is deliberate: it only serialises two
+    # attempts on the *same* request, which is exactly the pair that must not
+    # both proceed.
+    locked_status = (
+        PurchaseRequest.objects.select_for_update()
+        .filter(pk=purchase_request.pk)
+        .values_list("status", flat=True)
+        .first()
+    )
+    if locked_status != "pending":
         return None, False, "this request has already been reviewed"
 
     car = purchase_request.car
@@ -80,8 +99,18 @@ def approve_request(purchase_request, reviewed_by, note=""):
     return payment, ok, detail
 
 
+@transaction.atomic
 def reject_request(purchase_request, reviewed_by, note=""):
-    if purchase_request.status != "pending":
+    # Same race as approving, and the same fix. Rejecting twice writes a
+    # second decision note over the first, so the record of who turned the
+    # customer down - and why - is the loser's, not the winner's.
+    locked_status = (
+        PurchaseRequest.objects.select_for_update()
+        .filter(pk=purchase_request.pk)
+        .values_list("status", flat=True)
+        .first()
+    )
+    if locked_status != "pending":
         return False, "this request has already been reviewed"
 
     purchase_request.status = "rejected"
