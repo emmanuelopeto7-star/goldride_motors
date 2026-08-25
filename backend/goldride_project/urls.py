@@ -69,6 +69,7 @@ urlpatterns = [
     path('api/my/orders/', MyOrdersView.as_view()),
     path('api/my/orders/<int:pk>/cancel/', CancelOrderView.as_view()),
     path('api/purchases/', include('purchases.urls')),
+    path('api/staff/tickets/', include('tickets.urls')),
     path('api/staff/', include('goldride_app.staff_urls')),
     path('api/payments/', include('payments.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

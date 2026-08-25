@@ -125,6 +125,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'payments',
     'purchases',
+    'tickets',
     'corsheaders',
     'drf_spectacular',
 ]

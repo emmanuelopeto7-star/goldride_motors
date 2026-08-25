@@ -14,14 +14,14 @@ import MyRequests from './pages/MyRequests'
 import MySaved from './pages/MySaved'
 import NotFound from './pages/NotFound'
 import TrackOrder from './pages/TrackOrder'
-import StaffApprovals from './pages/staff/StaffApprovals'
 import StaffEnquiries from './pages/staff/StaffEnquiries'
 import StaffInventory from './pages/staff/StaffInventory'
 import StaffLayout from './pages/staff/StaffLayout'
 import StaffOrders from './pages/staff/StaffOrders'
 import StaffPayments from './pages/staff/StaffPayments'
-import StaffSourcing from './pages/staff/StaffSourcing'
-import StaffSourcingDetail from './pages/staff/StaffSourcingDetail'
+import StaffSettings from './pages/staff/StaffSettings'
+import StaffTicketDetail from './pages/staff/StaffTicketDetail'
+import StaffTickets from './pages/staff/StaffTickets'
 
 function App() {
   return (
@@ -37,14 +37,21 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/staff/approvals" replace />} />
-        <Route path="approvals" element={<StaffApprovals />} />
-        <Route path="sourcing" element={<StaffSourcing />} />
-        <Route path="sourcing/:id" element={<StaffSourcingDetail />} />
+        <Route index element={<Navigate to="/staff/tickets" replace />} />
+        <Route path="tickets" element={<StaffTickets />} />
+        <Route path="tickets/:id" element={<StaffTicketDetail />} />
+        {/* Tickets replaced these two queues rather than sitting on top of
+            them. The paths stay as redirects because they are in people's
+            bookmarks and in the browser history of everyone who used the
+            dashboard before today. */}
+        <Route path="approvals" element={<Navigate to="/staff/tickets?kind=approval" replace />} />
+        <Route path="sourcing" element={<Navigate to="/staff/tickets?kind=sourcing" replace />} />
+        <Route path="sourcing/:id" element={<Navigate to="/staff/tickets?kind=sourcing" replace />} />
         <Route path="inventory" element={<StaffInventory />} />
         <Route path="orders" element={<StaffOrders />} />
         <Route path="payments" element={<StaffPayments />} />
         <Route path="enquiries" element={<StaffEnquiries />} />
+        <Route path="settings" element={<StaffSettings />} />
       </Route>
 
       <Route element={<Layout />}>

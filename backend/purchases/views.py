@@ -68,6 +68,19 @@ class StaffPurchaseRequestListView(generics.ListAPIView):
         return queryset
 
 
+class StaffPurchaseRequestDetailView(generics.RetrieveAPIView):
+    """One request, for the ticket that was raised about it.
+
+    The queue used to be a list and nothing else, so reading a single request
+    meant filtering the list down to it. A ticket links to its subject by id,
+    which needs an address of its own.
+    """
+
+    queryset = PurchaseRequest.objects.select_related("car", "customer")
+    serializer_class = StaffPurchaseRequestSerializer
+    permission_classes = [IsSales]
+
+
 class ApprovePurchaseRequestView(APIView):
     permission_classes = [IsManager]
 

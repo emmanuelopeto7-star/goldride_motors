@@ -4,12 +4,14 @@ from .views import (
     ApprovePurchaseRequestView,
     PurchaseRequestCreateView,
     RejectPurchaseRequestView,
+    StaffPurchaseRequestDetailView,
     StaffPurchaseRequestListView,
 )
 
 urlpatterns = [
     path("", PurchaseRequestCreateView.as_view()),
     path("staff/", StaffPurchaseRequestListView.as_view()),
+    path("staff/<int:pk>/", StaffPurchaseRequestDetailView.as_view()),
     path("staff/<int:pk>/approve/", ApprovePurchaseRequestView.as_view()),
     path("staff/<int:pk>/reject/", RejectPurchaseRequestView.as_view()),
 ]

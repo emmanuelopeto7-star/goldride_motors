@@ -36,6 +36,10 @@ export function usePurchaseRequests(status = 'pending') {
     queryClient.invalidateQueries({ queryKey: ['staff-purchase-requests'] })
     queryClient.invalidateQueries({ queryKey: ['cars'] })
     queryClient.invalidateQueries({ queryKey: ['my-orders'] })
+    // A decision closes the ticket that was raised about the request, so the
+    // queue and the ticket being looked at are both out of date.
+    queryClient.invalidateQueries({ queryKey: ['tickets'] })
+    queryClient.invalidateQueries({ queryKey: ['ticket'] })
   }
 
   const approve = useMutation({
@@ -88,4 +92,17 @@ export function describeApproval(result) {
       `${result.detail}. The order stands and the car is reserved - arrange ` +
       `payment by bank transfer.`,
   }
+}
+
+/** One request, for the ticket raised about it. The queue hook fetches a
+ *  list; a ticket knows its subject by id and needs just that one. */
+export function usePurchaseRequest(id) {
+  return useQuery({
+    queryKey: ['staff-purchase-request', id],
+    queryFn: async () => {
+      const res = await api.get(`/api/purchases/staff/${id}/`)
+      return res.data
+    },
+    enabled: Boolean(id),
+  })
 }

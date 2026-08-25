@@ -14,12 +14,14 @@ import { useAuth } from '../../context/AuthContext'
  */
 
 const TABS = [
-  ['/staff/approvals', 'Approvals'],
-  ['/staff/sourcing', 'Sourcing'],
+  // One queue where there were two. Approvals and Sourcing are kinds of
+  // ticket now, not screens of their own.
+  ['/staff/tickets', 'Queue'],
   ['/staff/inventory', 'Inventory'],
   ['/staff/orders', 'Orders'],
   ['/staff/payments', 'Payments'],
   ['/staff/enquiries', 'Enquiries'],
+  ['/staff/settings', 'Settings'],
 ]
 
 function StaffLayout() {

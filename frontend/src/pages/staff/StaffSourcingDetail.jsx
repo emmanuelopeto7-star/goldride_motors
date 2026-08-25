@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import ConfirmModal from '../../components/ConfirmModal'
 import ErrorState from '../../components/ErrorState'
 import SourcedUnitForm from '../../components/SourcedUnitForm'
 import { errorMessages } from '../../lib/errors'
 import { formatPrice } from '../../lib/format'
+import { useAuth } from '../../context/AuthContext'
 import { useImportRates, useImportRequestDetail } from '../../hooks/useSourcing'
 
 const STATUS_LABEL = {
@@ -14,7 +16,7 @@ const STATUS_LABEL = {
   cancelled: 'Cancelled',
 }
 
-function UnitRow({ unit, onPush, isPushing, onEdit }) {
+function UnitRow({ unit, onPush, isPushing, onEdit, onDelete }) {
   const spec = [
     unit.mileage_km && `${Number(unit.mileage_km).toLocaleString('en-KE')} km`,
     unit.grade && `Grade ${unit.grade}`,
@@ -25,6 +27,17 @@ function UnitRow({ unit, onPush, isPushing, onEdit }) {
   return (
     <li className="border border-line bg-surface p-6">
       <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
+        {/* Proof the photograph attached. Without it the only way to know is
+            to reopen the form, and a unit pushed to stock with no picture
+            becomes a blank card on the site. */}
+        {unit.photo && (
+          <img
+            src={unit.photo}
+            alt=""
+            loading="lazy"
+            className="aspect-[4/3] w-32 shrink-0 border border-line object-cover"
+          />
+        )}
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-model">
@@ -72,6 +85,18 @@ function UnitRow({ unit, onPush, isPushing, onEdit }) {
           Edit this quote
         </button>
 
+        {/* A duplicate, or one entered against the wrong request. Manager
+            only, matching every other delete on the dashboard. */}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(unit)}
+            className="text-meta text-ink-soft underline"
+          >
+            Remove this unit
+          </button>
+        )}
+
         {/* Only a unit nobody took, and only once. The API refuses otherwise. */}
         {unit.status === 'rejected' && !unit.pushed_to_car && (
           <>
@@ -103,10 +128,21 @@ function UnitRow({ unit, onPush, isPushing, onEdit }) {
   )
 }
 
-function StaffSourcingDetail() {
-  const { id } = useParams()
-  const { query, addUnit, updateUnit, notify, pushToStock } =
+/** Renders either as its own page or as the sourcing half of a ticket.
+ *
+ *  When a ticket passes `requestId` there is no route parameter to read, and
+ *  the ticket has already drawn its own way back - so the "all requests" link
+ *  would point at a queue that no longer exists.
+ */
+function StaffSourcingDetail({ requestId }) {
+  const { id: routeId } = useParams()
+  const id = requestId ?? routeId
+  const { query, addUnit, updateUnit, notify, pushToStock, removeUnit, removeRequest } =
     useImportRequestDetail(id)
+  const { isManager } = useAuth()
+  const navigate = useNavigate()
+  const [deletingUnit, setDeletingUnit] = useState(null)
+  const [deletingRequest, setDeletingRequest] = useState(false)
   const { data: rates } = useImportRates()
   const [adding, setAdding] = useState(false)
   const [editingUnit, setEditingUnit] = useState(null)
@@ -127,9 +163,11 @@ function StaffSourcingDetail() {
 
   return (
     <div>
-      <Link to="/staff/sourcing" className="text-meta text-ink underline">
-        ← All requests
-      </Link>
+      {!requestId && (
+        <Link to="/staff/tickets" className="text-meta text-ink underline">
+          ← Back to the queue
+        </Link>
+      )}
 
       <div className="mt-6 flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
         <div>
@@ -230,6 +268,14 @@ function StaffSourcingDetail() {
                   setEditingUnit(target)
                   setAdding(false)
                 }}
+                onDelete={
+                  isManager
+                    ? (target) => {
+                        removeUnit.reset()
+                        setDeletingUnit(target)
+                      }
+                    : undefined
+                }
               />
             ))}
           </ul>
@@ -283,6 +329,55 @@ function StaffSourcingDetail() {
           </button>
         )}
       </section>
+
+      {/* Deleting the request takes its units with it, so it sits apart from
+          the day-to-day controls rather than beside them. */}
+      {isManager && (
+        <section className="mt-16 border-t border-line pt-12">
+          <button
+            type="button"
+            onClick={() => {
+              removeRequest.reset()
+              setDeletingRequest(true)
+            }}
+            className="text-meta text-ink-soft underline"
+          >
+            Delete this request
+          </button>
+        </section>
+      )}
+
+      {deletingUnit && (
+        <ConfirmModal
+          title="Remove this unit?"
+          body={`The ${deletingUnit.year} ${deletingUnit.make} ${deletingUnit.model} and its quote will be removed from this request.`}
+          confirmLabel="Remove it"
+          mutation={removeUnit}
+          onConfirm={() =>
+            removeUnit.mutate(deletingUnit.id, {
+              onSuccess: () => setDeletingUnit(null),
+            })
+          }
+          onClose={() => setDeletingUnit(null)}
+        />
+      )}
+
+      {deletingRequest && (
+        <ConfirmModal
+          title="Delete this request?"
+          body={`Everything sourced against ${request.contact_name}'s request goes with it, including the quotes. This cannot be undone.`}
+          mutation={removeRequest}
+          onConfirm={() =>
+            removeRequest.mutate(undefined, {
+              onSuccess: () => {
+                setDeletingRequest(false)
+                navigate('/staff/tickets')
+              },
+            })
+          }
+          onClose={() => setDeletingRequest(false)}
+        />
+      )}
     </div>
   )
 }

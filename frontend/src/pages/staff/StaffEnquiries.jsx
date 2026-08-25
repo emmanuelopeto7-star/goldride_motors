@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import api from '../../api/client'
 import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
+import Pagination from '../../components/Pagination'
 
 /** Every "please contact me" a customer has sent about a car.
  *
@@ -12,11 +13,22 @@ import ErrorState from '../../components/ErrorState'
  *  now rather than sitting unread behind Swagger.
  */
 function StaffEnquiries() {
+  const [searchParams] = useSearchParams()
+  const page = Math.max(1, Number(searchParams.get('page') ?? 1))
+
   const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ['staff-enquiries'],
+    // The whole payload, not just the results. The endpoint paginates at
+    // twelve, so returning only the first page made every enquiry after the
+    // twelfth unreachable - invisible rather than merely further down.
+    queryKey: ['staff-enquiries', page],
     queryFn: async () => {
-      const res = await api.get('/api/inquiries/all/')
-      return res.data.results ?? res.data
+      const res = await api.get('/api/inquiries/all/', {
+        params: page > 1 ? { page } : undefined,
+      })
+      const payload = res.data
+      return Array.isArray(payload)
+        ? { results: payload, count: payload.length, next: null, previous: null }
+        : payload
     },
   })
 
@@ -28,7 +40,9 @@ function StaffEnquiries() {
     )
   }
 
-  if (data.length === 0) {
+  const enquiries = data.results
+
+  if (enquiries.length === 0) {
     return (
       <EmptyState
         title="No enquiries"
@@ -38,8 +52,9 @@ function StaffEnquiries() {
   }
 
   return (
-    <ul className="space-y-4">
-      {data.map((enquiry) => (
+    <>
+      <ul className="space-y-4">
+        {enquiries.map((enquiry) => (
         <li key={enquiry.id} className="border border-line bg-surface p-6">
           <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
             <div>
@@ -85,8 +100,15 @@ function StaffEnquiries() {
             </Link>
           )}
         </li>
-      ))}
-    </ul>
+        ))}
+      </ul>
+
+      <Pagination
+        count={data.count}
+        hasNext={Boolean(data.next)}
+        hasPrevious={Boolean(data.previous)}
+      />
+    </>
   )
 }
 

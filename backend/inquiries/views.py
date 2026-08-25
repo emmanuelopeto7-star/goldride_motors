@@ -34,6 +34,18 @@ class InquiryCreateView(generics.ListCreateAPIView):
 
 
 class InquiryListView(generics.ListAPIView):
-    queryset = Inquiry.objects.all().order_by("-created_at")
+    # select_related because every row renders the car and, when there is one,
+    # the customer and whoever answered - four queries a row without it.
+    queryset = Inquiry.objects.select_related(
+        "car", "customer", "replied_by"
+    ).order_by("-created_at")
+    serializer_class = StaffInquirySerializer
+    permission_classes = [IsSales]
+
+
+class StaffInquiryDetailView(generics.RetrieveAPIView):
+    """One enquiry, for the ticket raised about it."""
+
+    queryset = Inquiry.objects.select_related("car", "customer", "replied_by")
     serializer_class = StaffInquirySerializer
     permission_classes = [IsSales]

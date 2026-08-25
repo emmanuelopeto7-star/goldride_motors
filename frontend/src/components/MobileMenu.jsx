@@ -96,8 +96,8 @@ function MobileMenu({ onClose, onSignIn }) {
           <p className={heading}>Staff</p>
           <ul className="mt-3">
             <li>
-              <Link to="/staff/approvals" className={link}>
-                Approvals
+              <Link to="/staff/tickets" className={link}>
+                Queue
               </Link>
             </li>
           </ul>
