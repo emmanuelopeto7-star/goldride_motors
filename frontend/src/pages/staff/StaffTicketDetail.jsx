@@ -1,10 +1,13 @@
 import { Link, useParams } from 'react-router-dom'
+import DealerTicketPanel from '../../components/DealerTicketPanel'
 import ApprovalTicketPanel from '../../components/ApprovalTicketPanel'
 import EnquiryTicketPanel from '../../components/EnquiryTicketPanel'
 import ErrorState from '../../components/ErrorState'
+import TicketChat from '../../components/TicketChat'
 import { useAuth } from '../../context/AuthContext'
 import { useTicket, useTicketActions } from '../../hooks/useTickets'
 import StaffSourcingDetail from './StaffSourcingDetail'
+import Button from '../../components/Button'
 
 /** One ticket, whatever kind of work it turns out to be.
  *
@@ -63,14 +66,12 @@ function StaffTicketDetail() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-6">
           {ticket.status === 'open' && (
-            <button
-              type="button"
+            <Button
               disabled={busy}
               onClick={() => claim.mutate(ticket.id)}
-              className="h-11 bg-ink px-6 text-badge uppercase text-surface disabled:opacity-50"
             >
               Claim it
-            </button>
+            </Button>
           )}
 
           {/* Handing a ticket back or closing it is the owner's to do, or a
@@ -78,22 +79,20 @@ function StaffTicketDetail() {
               refuses it, so the buttons are not offered either. */}
           {ticket.status === 'claimed' && canHandOver && (
             <>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 disabled={busy}
                 onClick={() => release.mutate(ticket.id)}
-                className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
               >
                 {isMine ? 'Give it back' : 'Return to the queue'}
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 disabled={busy}
                 onClick={() => close.mutate(ticket.id)}
-                className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
               >
                 Close it
-              </button>
+              </Button>
             </>
           )}
 
@@ -125,6 +124,16 @@ function StaffTicketDetail() {
         </div>
       </header>
 
+      {/* Above the work, not below it: the last thing said is usually why
+          you opened the ticket, and burying it under a landed-cost table
+          means scrolling past the answer to find the question. */}
+      <section className="mt-8">
+        <h2 className="text-badge uppercase text-ink-soft">Conversation</h2>
+        <div className="mt-4">
+          <TicketChat ticketId={ticket.id} hasCustomer={ticket.has_customer} />
+        </div>
+      </section>
+
       <section className="mt-8">
         {ticket.kind === 'approval' && (
           <div className="border border-line bg-surface p-6">
@@ -142,6 +151,11 @@ function StaffTicketDetail() {
         )}
         {ticket.kind === 'sourcing' && (
           <StaffSourcingDetail requestId={ticket.subject_id} />
+        )}
+        {ticket.kind === 'dealer' && (
+          <div className="border border-line bg-surface p-6">
+            <DealerTicketPanel applicationId={ticket.subject_id} />
+          </div>
         )}
       </section>
     </div>

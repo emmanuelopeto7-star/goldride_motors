@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Modal from './Modal'
 import { errorMessages } from '../lib/errors'
 import { STAGES, nextStage } from '../hooks/useStaffOrders'
+import Button from './Button'
 
 const labelClass = 'text-badge uppercase text-ink-soft'
 
@@ -71,13 +72,14 @@ function AdvanceStageModal({ order, mutation, onClose }) {
           </ul>
         )}
 
-        <button
+        <Button
+          size="large"
+          className="mt-8 w-full"
           type="submit"
           disabled={mutation.isPending}
-          className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {mutation.isPending ? 'Saving...' : 'Record this update'}
-        </button>
+        </Button>
       </form>
     </Modal>
   )

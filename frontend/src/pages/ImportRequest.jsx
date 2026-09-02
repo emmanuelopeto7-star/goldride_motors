@@ -8,6 +8,7 @@ import {
   earliestEligibleYear,
   useCreateImportRequest,
 } from '../hooks/useImportRequest'
+import Button from '../components/Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -227,13 +228,14 @@ function ImportRequest() {
           </ul>
         )}
 
-        <button
+        <Button
+          size="large"
+          className="mt-12 w-full sm:w-auto sm:px-12"
           type="submit"
           disabled={create.isPending || yearIneligible}
-          className="mt-12 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50 sm:w-auto sm:px-12"
         >
           {create.isPending ? 'Sending...' : 'Start the search'}
-        </button>
+        </Button>
       </form>
     </Page>
   )

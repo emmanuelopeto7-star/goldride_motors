@@ -6,6 +6,7 @@ import { formatPrice } from '../lib/format'
 import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 import Modal from './Modal'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -131,13 +132,14 @@ function PurchaseModal({ car, title, onClose }) {
               </ul>
             )}
 
-            <button
+            <Button
+              size="large"
+              className="w-full"
               type="submit"
               disabled={request.isPending}
-              className="h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
             >
               {request.isPending ? 'Sending…' : 'Send request'}
-            </button>
+            </Button>
 
             <p className="text-meta text-ink-mute">
               This is a request, not a purchase. Nothing is charged until our team

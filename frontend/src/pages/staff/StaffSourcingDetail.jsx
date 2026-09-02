@@ -7,6 +7,7 @@ import { errorMessages } from '../../lib/errors'
 import { formatPrice } from '../../lib/format'
 import { useAuth } from '../../context/AuthContext'
 import { useImportRates, useImportRequestDetail } from '../../hooks/useSourcing'
+import Button from '../../components/Button'
 
 const STATUS_LABEL = {
   pending: 'To source',
@@ -100,14 +101,13 @@ function UnitRow({ unit, onPush, isPushing, onEdit, onDelete }) {
         {/* Only a unit nobody took, and only once. The API refuses otherwise. */}
         {unit.status === 'rejected' && !unit.pushed_to_car && (
           <>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               disabled={isPushing}
               onClick={() => onPush(unit)}
-              className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
             >
               Push to stock
-            </button>
+            </Button>
             <p className="text-meta text-ink-soft">
               Would list at {formatPrice(unit.stock_price_preview)}
             </p>
@@ -226,18 +226,16 @@ function StaffSourcingDetail({ requestId }) {
           {/* Nothing to tell them about until something is on offer, and the
               API refuses an empty notify anyway. */}
           {offered > 0 && (
-            <button
-              type="button"
+            <Button
               disabled={notify.isPending}
               onClick={() => notify.mutate()}
-              className="h-11 bg-ink px-6 text-badge uppercase text-surface disabled:opacity-50"
             >
               {notify.isPending
                 ? 'Sending...'
                 : request.status === 'awaiting_selection'
                   ? 'Send again'
                   : `Tell them about ${offered}`}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -320,13 +318,13 @@ function StaffSourcingDetail({ requestId }) {
             </div>
           </>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="large"
             onClick={() => setAdding(true)}
-            className="h-12 border border-ink px-8 text-badge uppercase"
           >
             Add a sourced unit
-          </button>
+          </Button>
         )}
       </section>
 

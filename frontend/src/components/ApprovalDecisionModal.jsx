@@ -3,6 +3,7 @@ import Modal from './Modal'
 import { errorMessages } from '../lib/errors'
 import { formatPrice } from '../lib/format'
 import { describeApproval } from '../hooks/usePurchaseRequests'
+import Button from './Button'
 
 /** The confirm step in front of a decision, and the report afterwards.
  *
@@ -51,13 +52,13 @@ function ApprovalDecisionModal({ action, request, onClose, mutation }) {
           </a>
         )}
 
-        <button
-          type="button"
+        <Button
+          size="large"
+          className="mt-8 w-full"
           onClick={onClose}
-          className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface"
         >
           Done
-        </button>
+        </Button>
       </Modal>
     )
   }
@@ -104,19 +105,19 @@ function ApprovalDecisionModal({ action, request, onClose, mutation }) {
           </ul>
         )}
 
-        <button
+        <Button
           type="submit"
+          variant={approving ? 'primary' : 'secondary'}
+          size="large"
+          className="mt-6 w-full"
           disabled={mutation.isPending}
-          className={`mt-6 h-12 w-full text-badge uppercase disabled:opacity-50 ${
-            approving ? 'bg-ink text-surface' : 'border border-ink text-ink'
-          }`}
         >
           {mutation.isPending
             ? 'Working...'
             : approving
               ? 'Approve and collect'
               : 'Reject'}
-        </button>
+        </Button>
       </form>
     </Modal>
   )

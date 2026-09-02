@@ -5,12 +5,14 @@ import Pagination from '../../components/Pagination'
 import { formatPrice } from '../../lib/format'
 import { useAuth } from '../../context/AuthContext'
 import { useTicketActions, useTickets } from '../../hooks/useTickets'
+import Button from '../../components/Button'
 
 const KINDS = [
   ['', 'Everything'],
   ['approval', 'Approvals'],
   ['sourcing', 'Sourcing'],
   ['enquiry', 'Enquiries'],
+  ['dealer', 'Dealers'],
 ]
 
 /** Who the queue is filtered to. "Unclaimed" is the one that matters on a busy
@@ -106,7 +108,7 @@ function StaffTickets() {
         ) : tickets.length === 0 ? (
           <EmptyState
             title="Nothing waiting"
-            message="Approvals and sourcing requests appear here as they arrive."
+            message="Approvals, sourcing, enquiries and dealer applications appear here as they arrive."
           />
         ) : (
           <ul className="space-y-4">
@@ -125,10 +127,16 @@ function StaffTickets() {
                         </Link>
                         <KindBadge ticket={ticket} />
                       </div>
+                      {/* A dealer application has no figure on the table at
+                          all - they are asking to start, not offering one -
+                          so it says what it is instead of denying a budget
+                          that was never part of the conversation. */}
                       <p className="mt-1 text-price">
                         {ticket.amount
                           ? formatPrice(ticket.amount)
-                          : 'No budget given'}
+                          : ticket.kind === 'dealer'
+                            ? 'Wants to list with us'
+                            : 'No budget given'}
                       </p>
                     </div>
 
@@ -154,14 +162,12 @@ function StaffTickets() {
 
                   <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-6">
                     {ticket.status === 'open' ? (
-                      <button
-                        type="button"
+                      <Button
                         disabled={claim.isPending}
                         onClick={() => claim.mutate(ticket.id)}
-                        className="h-11 bg-ink px-6 text-badge uppercase text-surface disabled:opacity-50"
                       >
                         Claim
-                      </button>
+                      </Button>
                     ) : (
                       <p className="text-meta text-ink-soft">
                         {isMine ? 'Yours.' : `With ${ticket.claimed_by_username}.`}

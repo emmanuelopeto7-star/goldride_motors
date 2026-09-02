@@ -6,6 +6,7 @@ import {
   usePurchaseRequest,
   usePurchaseRequests,
 } from '../hooks/usePurchaseRequests'
+import Button from './Button'
 
 /** The approval branch of a ticket.
  *
@@ -88,20 +89,17 @@ function ApprovalTicketPanel({ requestId }) {
           decision, so offering the buttons would be a lie. */}
       {canDecide && request.status === 'pending' && (
         <div className="mt-6 flex flex-wrap gap-3 border-t border-line pt-6">
-          <button
-            type="button"
+          <Button
             onClick={() => open('approve')}
-            className="h-11 bg-ink px-6 text-badge uppercase text-surface"
           >
             Approve
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => open('reject')}
-            className="h-11 border border-ink px-6 text-badge uppercase"
           >
             Reject
-          </button>
+          </Button>
         </div>
       )}
 

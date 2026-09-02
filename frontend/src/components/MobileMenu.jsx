@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import Modal from './Modal'
+import Button from './Button'
 
 const BODY_LINKS = [
   ['', 'All cars'],
@@ -24,7 +25,7 @@ const ACCOUNT_LINKS = [
 
 function MobileMenu({ onClose, onSignIn }) {
   const location = useLocation()
-  const { user, isSales, signOut } = useAuth()
+  const { user, isSales, isDealer, signOut } = useAuth()
 
   // Shares the cache entry with the filter bar and footer.
   const { data: makes } = useQuery({
@@ -46,7 +47,10 @@ function MobileMenu({ onClose, onSignIn }) {
   }, [location.pathname, location.search])
 
   const heading = 'text-badge uppercase text-ink-mute'
-  const link = 'block py-2 text-model text-ink'
+  // py-3 keeps every row a comfortable target on a phone; py-2 put a
+  // 15px link in a 36px box, which is under any reasonable minimum.
+  const link =
+    'block py-3 text-model text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
 
   return (
     <Modal onClose={onClose} size="drawer">
@@ -91,6 +95,25 @@ function MobileMenu({ onClose, onSignIn }) {
         </ul>
       </nav>
 
+      {/* A dealership arriving on a phone has the same errand as one on a
+          desktop, and the footer is even further away down here. */}
+      <nav className="mt-8 border-t border-line pt-8">
+        <p className={heading}>Dealers</p>
+        <ul className="mt-3">
+          <li>
+            {isDealer ? (
+              <Link to="/dealer" className={link}>
+                Your cars
+              </Link>
+            ) : (
+              <Link to="/list-with-us" className={link}>
+                List your cars with us
+              </Link>
+            )}
+          </li>
+        </ul>
+      </nav>
+
       {isSales && (
         <nav className="mt-8 border-t border-line pt-8">
           <p className={heading}>Staff</p>
@@ -117,28 +140,29 @@ function MobileMenu({ onClose, onSignIn }) {
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="large"
+              className="mt-6 w-full"
               onClick={() => {
                 signOut()
                 onClose()
               }}
-              className="mt-6 h-12 w-full border border-ink text-badge uppercase"
             >
               Sign out
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="large"
+            className="w-full"
             onClick={() => {
               onClose()
               onSignIn()
             }}
-            className="h-12 w-full bg-ink text-badge uppercase text-surface"
           >
             Sign in
-          </button>
+          </Button>
         )}
       </div>
     </Modal>

@@ -5,6 +5,7 @@ import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 import Modal from './Modal'
 import SocialButtons from './SocialButtons'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -103,17 +104,18 @@ function AuthModal({ onClose }) {
           </ul>
         )}
 
-        <button
+        <Button
+          size="large"
+          className="w-full"
           type="submit"
           disabled={auth.isPending}
-          className="h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {auth.isPending
             ? 'Please wait…'
             : isRegister
               ? 'Create account'
               : 'Continue'}
-        </button>
+        </Button>
       </form>
 
       <p className="mt-6 text-center text-meta text-ink-soft">

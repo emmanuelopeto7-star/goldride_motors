@@ -5,6 +5,7 @@ import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 import PurchaseModal from './PurchaseModal'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -51,13 +52,13 @@ function EnquiryPanel({ car, title }) {
         {sold ? (
           <p className="text-meta text-ink-soft">This car has been sold.</p>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="large"
+            className="w-full"
             onClick={() => (user ? setBuyOpen(true) : setAuthOpen(true))}
-            className="h-12 w-full bg-ink text-badge uppercase text-surface"
           >
             Request to buy
-          </button>
+          </Button>
         )}
       </div>
 
@@ -108,26 +109,29 @@ function EnquiryPanel({ car, title }) {
           )}
 
           {/* Secondary: "Request to buy" above it is the primary action. */}
-          <button
+          <Button
+            variant="secondary"
+            size="large"
+            className="w-full"
             type="submit"
             disabled={enquiry.isPending}
-            className="h-12 w-full border border-ink text-badge uppercase disabled:opacity-50"
           >
             {enquiry.isPending ? 'Sending…' : 'Send message'}
-          </button>
+          </Button>
         </form>
       ) : (
         <div className="mt-6 border-t border-line pt-6">
           <p className="text-model text-ink-soft">
             Or ask us a question about this car.
           </p>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="large"
+            className="mt-4 w-full"
             onClick={() => setAuthOpen(true)}
-            className="mt-4 h-12 w-full border border-ink text-badge uppercase"
           >
             Sign in to enquire
-          </button>
+          </Button>
         </div>
       )}
 

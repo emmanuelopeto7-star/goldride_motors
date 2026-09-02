@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { formatPrice } from '../lib/format'
+import Button from './Button'
 
 /** One unit we found, with the arithmetic behind its price.
  *
@@ -119,22 +120,21 @@ function SourcedUnitCard({ unit, onDecide, isDeciding, decided }) {
           would be a promise the server breaks. */}
       {unit.status === 'offered' && !decided && (
         <div className="mt-8 flex flex-wrap gap-3 border-t border-line pt-8">
-          <button
-            type="button"
+          <Button
+            size="large"
             disabled={isDeciding}
             onClick={() => onDecide(unit, 'select')}
-            className="h-12 bg-ink px-8 text-badge uppercase text-surface disabled:opacity-50"
           >
             Choose this one
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="secondary"
+            size="large"
             disabled={isDeciding}
             onClick={() => onDecide(unit, 'reject')}
-            className="h-12 border border-ink px-8 text-badge uppercase disabled:opacity-50"
           >
             Not this one
-          </button>
+          </Button>
         </div>
       )}
     </article>

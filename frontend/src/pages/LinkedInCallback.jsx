@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api/client'
 import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
+import Button from '../components/Button'
 
 /** Where LinkedIn sends the browser back. Swaps the authorisation code for a
  *  token, then gets out of the way. */
@@ -50,13 +51,14 @@ function LinkedInCallback() {
         <>
           <p className="font-serif text-section">Sign-in failed</p>
           <p className="mt-3 text-model text-ink-soft">{error}</p>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="large"
+            className="mt-8"
             onClick={() => navigate('/', { replace: true })}
-            className="mt-8 h-12 border border-ink px-8 text-badge uppercase"
           >
             Back to all cars
-          </button>
+          </Button>
         </>
       ) : (
         <p className="text-model text-ink-soft">Signing you in…</p>

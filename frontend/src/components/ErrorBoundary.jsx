@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import Button from './Button'
 
 /** Catches render-time crashes anywhere below it. This has to be a class -
  *  getDerivedStateFromError and componentDidCatch have no hook equivalent.
@@ -25,13 +26,14 @@ class ErrorBoundary extends Component {
           <p className="mt-3 text-model text-ink-soft">
             This page hit an unexpected error. Reloading usually fixes it.
           </p>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="large"
+            className="mt-8"
             onClick={() => window.location.reload()}
-            className="mt-8 h-12 border border-ink px-8 text-badge uppercase"
           >
             Reload
-          </button>
+          </Button>
         </div>
       </div>
     )

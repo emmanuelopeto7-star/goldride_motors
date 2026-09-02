@@ -1,7 +1,7 @@
 import ConfirmModal from '../../components/ConfirmModal'
 import OrderEditModal from '../../components/OrderEditModal'
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import AdvanceStageModal from '../../components/AdvanceStageModal'
 import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
@@ -10,6 +10,7 @@ import ReactivateOrderModal from '../../components/ReactivateOrderModal'
 import { formatPrice } from '../../lib/format'
 import { useAuth } from '../../context/AuthContext'
 import { STAGES, nextStage, useStaffOrders } from '../../hooks/useStaffOrders'
+import Button from '../../components/Button'
 
 const VIEWS = [
   ['', '', 'Live'],
@@ -61,7 +62,7 @@ function StaffOrders() {
     cancelled,
     page,
   })
-  const { isManager } = useAuth()
+  const { isManager, isSales } = useAuth()
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const orders = query.data?.results ?? []
@@ -189,22 +190,19 @@ function StaffOrders() {
 
                   <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-6">
                     {order.is_cancelled ? (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
                         onClick={() => setReviving(order)}
-                        className="h-11 border border-ink px-6 text-badge uppercase"
                       >
                         Win it back
-                      </button>
+                      </Button>
                     ) : (
                       <>
-                        <button
-                          type="button"
+                        <Button
                           onClick={() => setAdvancing(order)}
-                          className="h-11 bg-ink px-6 text-badge uppercase text-surface"
                         >
                           {upcoming ? `Mark ${upcoming[1].toLowerCase()}` : 'Add an update'}
-                        </button>
+                        </Button>
                         <a
                           href={`/track/${order.token}`}
                           target="_blank"
@@ -223,6 +221,17 @@ function StaffOrders() {
                         >
                           Edit
                         </button>
+                        {/* Where somebody actually notices money is owed is
+                            here, looking at a balance - not on the payments
+                            screen. */}
+                        {isSales && !order.is_settled && (
+                          <Link
+                            to={`/staff/payments?raise=${order.id}`}
+                            className="text-meta text-ink underline"
+                          >
+                            Ask for a payment
+                          </Link>
+                        )}
                         {/* Manager only, and the API refuses outright while
                             the order still holds payments. */}
                         {isManager && (

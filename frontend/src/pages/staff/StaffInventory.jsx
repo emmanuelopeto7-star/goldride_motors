@@ -15,6 +15,7 @@ import {
   expiryState,
   useStaffCars,
 } from '../../hooks/useStaffCars'
+import Button from '../../components/Button'
 
 const VIEWS = [
   ['', 'All'],
@@ -137,18 +138,16 @@ function StaffInventory() {
         </nav>
 
         <div className="flex flex-wrap items-center gap-4">
-          <button
-            type="button"
+          <Button
             onClick={() => {
               // Clearing first, or the form opens showing the last attempt's
               // errors under empty fields.
               create.reset()
               setAdding(true)
             }}
-            className="h-11 bg-ink px-6 text-badge uppercase text-surface"
           >
             Add a listing
-          </button>
+          </Button>
 
         <form
           onSubmit={(event) => {

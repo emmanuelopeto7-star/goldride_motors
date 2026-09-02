@@ -1,5 +1,6 @@
 import Modal from './Modal'
 import { formatPrice } from '../lib/format'
+import Button from './Button'
 
 /** The step in front of choosing a unit.
  *
@@ -22,21 +23,22 @@ function ConfirmChoice({ unit, others, isPending, onCancel, onConfirm }) {
         it from this page afterwards — call us if you need to.
       </p>
 
-      <button
-        type="button"
+      <Button
+        size="large"
+        className="mt-8 w-full"
         disabled={isPending}
         onClick={onConfirm}
-        className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
       >
         {isPending ? 'Confirming...' : 'Yes, choose this one'}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="secondary"
+        size="large"
+        className="mt-3 w-full"
         onClick={onCancel}
-        className="mt-3 h-12 w-full border border-ink text-badge uppercase"
       >
         Go back
-      </button>
+      </Button>
     </Modal>
   )
 }

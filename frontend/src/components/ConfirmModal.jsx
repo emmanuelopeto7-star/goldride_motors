@@ -1,5 +1,6 @@
 import Modal from './Modal'
 import { errorMessages } from '../lib/errors'
+import Button from './Button'
 
 /** Are you sure - for the handful of things that cannot be undone.
  *
@@ -35,21 +36,22 @@ function ConfirmModal({
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <button
-          type="button"
+        <Button
+          size="large"
+          className="flex-1"
           disabled={mutation?.isPending}
           onClick={onConfirm}
-          className="h-12 flex-1 bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {mutation?.isPending ? 'Working...' : confirmLabel}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
+          size="large"
+          className="flex-1"
           onClick={onClose}
-          className="h-12 flex-1 border border-ink text-badge uppercase"
         >
           Keep it
-        </button>
+        </Button>
       </div>
     </Modal>
   )

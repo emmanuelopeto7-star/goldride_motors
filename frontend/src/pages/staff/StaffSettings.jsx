@@ -5,6 +5,7 @@ import { errorMessages } from '../../lib/errors'
 import { useAuth } from '../../context/AuthContext'
 import { useHeroBanners } from '../../hooks/useHeroBanners'
 import { useImportRates, useSetImportRates } from '../../hooks/useSourcing'
+import Button from '../../components/Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -69,16 +70,15 @@ function HeroSection() {
             The full-bleed image at the top of the shopfront.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => {
             create.reset()
             setAdding((open) => !open)
           }}
-          className="h-11 border border-ink px-6 text-badge uppercase"
         >
           {adding ? 'Cancel' : 'Add a hero'}
-        </button>
+        </Button>
       </div>
 
       {adding && (
@@ -135,13 +135,14 @@ function HeroSection() {
             </ul>
           )}
 
-          <button
+          <Button
+            size="large"
+            className="mt-6"
             type="submit"
             disabled={create.isPending}
-            className="mt-6 h-12 bg-ink px-8 text-badge uppercase text-surface disabled:opacity-50"
           >
             {create.isPending ? 'Uploading...' : 'Put it up'}
-          </button>
+          </Button>
         </form>
       )}
 
@@ -281,13 +282,12 @@ function RatesSection() {
           </p>
         </div>
         {isManager && !editing && (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={open}
-            className="h-11 border border-ink px-6 text-badge uppercase"
           >
             Put new rates in force
-          </button>
+          </Button>
         )}
       </div>
 
@@ -341,20 +341,20 @@ function RatesSection() {
           )}
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <button
+            <Button
+              size="large"
               type="submit"
               disabled={setRates.isPending}
-              className="h-12 bg-ink px-8 text-badge uppercase text-surface disabled:opacity-50"
             >
               {setRates.isPending ? 'Saving...' : 'Put them in force'}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
+              size="large"
               onClick={() => setEditing(false)}
-              className="h-12 border border-ink px-8 text-badge uppercase"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       )}

@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import Modal from './Modal'
 import { useCarImages } from '../hooks/useCarImages'
+import Button from './Button'
 
 /** Photographs for one listing.
  *
@@ -38,14 +39,14 @@ function CarPhotosModal({ car, onClose }) {
           onChange={handleFiles}
           className="hidden"
         />
-        <button
-          type="button"
+        <Button
+          size="large"
+          className="w-full"
           disabled={upload.isPending}
           onClick={() => fileInput.current?.click()}
-          className="h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {upload.isPending ? 'Uploading...' : 'Add photographs'}
-        </button>
+        </Button>
         <p className="mt-2 text-meta text-ink-mute">
           Pick several at once. Landscape 4:3 matches the card crop.
         </p>
@@ -113,13 +114,14 @@ function CarPhotosModal({ car, onClose }) {
         )}
       </div>
 
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="large"
+        className="mt-8 w-full"
         onClick={onClose}
-        className="mt-8 h-12 w-full border border-ink text-badge uppercase"
       >
         Done
-      </button>
+      </Button>
     </Modal>
   )
 }

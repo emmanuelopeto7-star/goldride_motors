@@ -4,6 +4,7 @@ import ErrorState from './ErrorState'
 import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 import { useTeam } from '../hooks/useTeam'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -58,16 +59,15 @@ function TeamSection() {
             Who can sign in to this dashboard, and what they may do.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => {
             add.reset()
             setAdding((open) => !open)
           }}
-          className="h-11 border border-ink px-6 text-badge uppercase"
         >
           {adding ? 'Cancel' : 'Add someone'}
-        </button>
+        </Button>
       </div>
 
       {adding && (
@@ -118,13 +118,14 @@ function TeamSection() {
             </ul>
           )}
 
-          <button
+          <Button
+            size="large"
+            className="mt-6"
             type="submit"
             disabled={add.isPending}
-            className="mt-6 h-12 bg-ink px-8 text-badge uppercase text-surface disabled:opacity-50"
           >
             {add.isPending ? 'Adding...' : 'Add them'}
-          </button>
+          </Button>
         </form>
       )}
 

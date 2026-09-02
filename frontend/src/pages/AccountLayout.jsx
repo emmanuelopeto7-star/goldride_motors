@@ -6,6 +6,7 @@ const TABS = [
   ['/my/requests', 'Requests'],
   ['/my/saved', 'Saved'],
   ['/my/enquiries', 'Enquiries'],
+  ['/my/messages', 'Messages'],
   ['/my/profile', 'Profile'],
 ]
 

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../api/client'
 import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
+import Button from '../components/Button'
 
 const fieldClass =
   'h-12 w-full max-w-[420px] border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -99,13 +100,14 @@ function MyProfile() {
 
           {save.isSuccess && <p className="text-meta">Saved.</p>}
 
-          <button
+          <Button
+            variant="secondary"
+            size="large"
             type="submit"
             disabled={save.isPending}
-            className="h-12 border border-ink px-8 text-badge uppercase disabled:opacity-50"
           >
             {save.isPending ? 'Saving…' : 'Save changes'}
-          </button>
+          </Button>
         </form>
       </section>
 
@@ -127,14 +129,15 @@ function MyProfile() {
               {user.email} has not been confirmed yet. Open the link we emailed
               you, or send it again.
             </p>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="large"
+              className="mt-4"
               onClick={() => resend.mutate()}
               disabled={resend.isPending || resend.isSuccess}
-              className="mt-4 h-12 border border-ink px-8 text-badge uppercase disabled:opacity-50"
             >
               {resend.isSuccess ? 'Sent' : resend.isPending ? 'Sending…' : 'Resend'}
-            </button>
+            </Button>
             {resend.isSuccess && (
               <p className="mt-3 text-meta text-ink-soft">
                 {resend.data?.detail ?? 'Check your email for the link.'}

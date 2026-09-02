@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Modal from './Modal'
 import { errorMessages } from '../lib/errors'
+import Button from './Button'
 
 /** Winning back a cancelled order.
  *
@@ -55,13 +56,14 @@ function ReactivateOrderModal({ order, mutation, onClose }) {
           </ul>
         )}
 
-        <button
+        <Button
+          size="large"
+          className="mt-8 w-full"
           type="submit"
           disabled={mutation.isPending}
-          className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {mutation.isPending ? 'Sending...' : 'Reopen and send'}
-        </button>
+        </Button>
       </form>
     </Modal>
   )

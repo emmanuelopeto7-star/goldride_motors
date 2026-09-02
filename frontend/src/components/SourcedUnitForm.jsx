@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { formatPrice } from '../lib/format'
 import { errorMessages } from '../lib/errors'
 import { landedCost } from '../lib/landedCost'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -180,13 +181,14 @@ function SourcedUnitForm({ request, rates, mutation, onDone, unit = null }) {
           Preview only. The saved figures come from the server.
         </p>
 
-        <button
+        <Button
+          size="large"
+          className="mt-6 w-full"
           type="submit"
           disabled={mutation.isPending}
-          className="mt-6 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {mutation.isPending ? 'Saving...' : unit ? 'Save changes' : 'Add this unit'}
-        </button>
+        </Button>
       </aside>
     </form>
   )

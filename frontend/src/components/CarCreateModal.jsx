@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Modal from './Modal'
 import { errorMessages } from '../lib/errors'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -182,13 +183,14 @@ function CarCreateModal({ mutation, onClose, onCreated }) {
           </ul>
         )}
 
-        <button
+        <Button
+          size="large"
+          className="mt-8 w-full"
           type="submit"
           disabled={mutation.isPending}
-          className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {mutation.isPending ? 'Adding...' : 'Add to inventory'}
-        </button>
+        </Button>
       </form>
     </Modal>
   )

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ErrorState from './ErrorState'
 import { useInquiry } from '../hooks/useInquiry'
+import Button from './Button'
 
 /** The enquiry branch of a ticket: the question, and the one answer to it.
  *
@@ -105,13 +106,13 @@ function EnquiryTicketPanel({ inquiryId, ticketId, reply }) {
             )}
 
             <div className="mt-4 flex flex-wrap items-center gap-4">
-              <button
+              <Button
+                size="large"
                 type="submit"
                 disabled={reply.isPending || !message.trim()}
-                className="h-12 bg-ink px-8 text-badge uppercase text-surface disabled:opacity-50"
               >
                 {reply.isPending ? 'Sending...' : 'Send and close'}
-              </button>
+              </Button>
               {/* Said plainly, because it is the whole rule: one answer per
                   enquiry, and sending it takes the ticket out of the queue. */}
               <p className="text-meta text-ink-soft">
