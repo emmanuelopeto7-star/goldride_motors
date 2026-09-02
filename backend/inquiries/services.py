@@ -38,6 +38,7 @@ def record_reply(inquiry, agent, message):
     ticket = getattr(inquiry, "ticket", None)
     if ticket is not None:
         ticket.close()
+        _add_to_conversation(ticket, agent, message)
 
     inquiry.refresh_from_db()
 
@@ -58,3 +59,19 @@ def record_reply(inquiry, agent, message):
     Inquiry.objects.filter(pk=inquiry.pk).update(reply_emailed=True)
     inquiry.refresh_from_db()
     return True, True, "sent"
+
+
+def _add_to_conversation(ticket, agent, message):
+    """Put the reply in the chat as well as in the email.
+
+    The same answer in both places on purpose: the customer gets it without
+    signing in, and the thread reads as a conversation rather than starting
+    mid-sentence next time either side opens it. Imported here rather than at
+    the top because chat reaches back into inquiries - a module-level import
+    either way round is a cycle.
+    """
+    from chat.models import Conversation
+    from chat.services import send_message
+
+    conversation, _ = Conversation.objects.get_or_create(ticket=ticket)
+    send_message(conversation, sender=agent, body=message, from_staff=True)
