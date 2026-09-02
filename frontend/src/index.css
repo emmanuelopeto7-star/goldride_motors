@@ -26,3 +26,27 @@
   --text-badge: 11px;
   --text-badge--letter-spacing: 0.08em;
 }
+/* Columns growing out of the baseline on first paint. DESIGN.md §11.
+   Scoped to charts, and off entirely for anyone who has asked for less
+   motion - a dashboard that animates every time it is opened is a dashboard
+   somebody has to wait for. */
+@keyframes chart-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.chart-rise {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: chart-rise 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-rise {
+    animation: none;
+  }
+}
