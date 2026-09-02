@@ -5,7 +5,12 @@ import hmac
 import hashlib
 import uuid
 
-PAYSTACK_BASE_URL = config('PAYSTACK_BASE_URL')
+# Paystack's public API host - the same for test and live keys, which are what
+# actually distinguish the two. It had no default, so a deploy that set every
+# secret correctly still died at import with "PAYSTACK_BASE_URL not found",
+# reading like a missing credential rather than a missing constant. Overridable
+# for a sandbox or a recorded-fixture proxy.
+PAYSTACK_BASE_URL = config('PAYSTACK_BASE_URL', default='https://api.paystack.co')
 
 
 def start_paystack_payment(payment, email):
