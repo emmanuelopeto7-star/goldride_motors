@@ -7,7 +7,10 @@
 # release running.
 set -o errexit
 
-pip install -r requirements.txt
+# Lives in backend/ rather than at the root: a requirements.txt beside a
+# manage.py is what makes Vercel decide the repository is a Django project
+# and try to build the API instead of the site.
+pip install -r backend/requirements.txt
 
 cd backend
 

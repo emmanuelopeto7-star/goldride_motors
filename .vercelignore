@@ -7,7 +7,6 @@
 # and reads like a missing environment variable, when what actually happened
 # is that the wrong project was built.
 backend/
-requirements.txt
 build.sh
 DEPLOY.md
 render.yaml
