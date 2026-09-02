@@ -36,6 +36,7 @@ from goldride_app.views import (
     VerifyEmailView,
 )
 from cars.views import FavouriteDestroyView, FavouriteView, HeroBannerView
+from payments.views import PayNowView
 from imports.views import (
     CancelOrderView,
     ImportRequestCreateView,
@@ -69,9 +70,16 @@ urlpatterns = [
     path('api/my/orders/', MyOrdersView.as_view()),
     path('api/my/orders/<int:pk>/cancel/', CancelOrderView.as_view()),
     path('api/purchases/', include('purchases.urls')),
+    path('api/chat/', include('chat.urls')),
+    path('api/staff/chats/', include('chat.staff_urls')),
     path('api/staff/tickets/', include('tickets.urls')),
+    # Before the catch-all staff include, which owns the bare prefix.
+    path('api/staff/dealers/', include('dealers.staff_urls')),
     path('api/staff/', include('goldride_app.staff_urls')),
     path('api/payments/', include('payments.urls')),
+    path('api/dealers/', include('dealers.urls')),
+    # Short and outside /api/ because it is a link people are given.
+    path('pay/<uuid:reference>/', PayNowView.as_view()),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),

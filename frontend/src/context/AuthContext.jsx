@@ -55,6 +55,10 @@ export function AuthProvider({ children }) {
     isLoading: Boolean(token) && isPending,
     roles,
     isCustomer: roles.includes('Customer'),
+    // No superuser bypass, matching IsDealer: every dealer endpoint is
+    // scoped to request.user.dealer, and an account with no dealership
+    // behind it has nothing to be scoped to.
+    isDealer: roles.includes('Dealer'),
     isSales: superuser || roles.includes('Sales') || roles.includes('Manager'),
     isManager: superuser || roles.includes('Manager'),
     isStaff: Boolean(user?.is_staff) || superuser,
