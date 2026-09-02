@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import api from '../api/client'
 import { formatPrice } from '../lib/format'
 import { errorMessages } from '../lib/errors'
+import Button from './Button'
 
 const STATUS_LABEL = {
   pending: 'Awaiting payment',
@@ -69,18 +70,17 @@ function PaymentRow({ payment, onPushSent }) {
           )}
 
           <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => dispatch.mutate()}
               disabled={dispatch.isPending}
-              className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
             >
               {dispatch.isPending
                 ? 'Sending…'
                 : payment.method === 'card'
                   ? 'Pay by card'
                   : 'Send M-PESA prompt'}
-            </button>
+            </Button>
 
             {sent && (
               <p className="text-meta text-ink-soft">

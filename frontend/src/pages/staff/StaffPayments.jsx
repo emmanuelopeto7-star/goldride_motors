@@ -1,29 +1,88 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import CorrectPaymentModal from '../../components/CorrectPaymentModal'
 import DispatchPaymentModal from '../../components/DispatchPaymentModal'
 import EmptyState from '../../components/EmptyState'
 import ErrorState from '../../components/ErrorState'
 import Pagination from '../../components/Pagination'
+import PaymentHistory from '../../components/PaymentHistory'
+import RaisePaymentModal from '../../components/RaisePaymentModal'
+import RecordPaymentModal from '../../components/RecordPaymentModal'
 import { counted, formatPrice } from '../../lib/format'
-import { STATUSES, useStaffPayments } from '../../hooks/useStaffPayments'
+import {
+  STATUSES,
+  useReconciliationRuns,
+  useStaffPayments,
+} from '../../hooks/useStaffPayments'
+import Button from '../../components/Button'
 
 const VIEWS = [['', 'All'], ...STATUSES]
+
+/** "6 minutes ago" rather than a timestamp: the question this answers is
+ *  whether the sweep is alive, and a clock time makes the reader do the
+ *  subtraction themselves. */
+function howLongAgo(value) {
+  const minutes = Math.round((Date.now() - new Date(value)) / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${counted(minutes, 'minute')} ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${counted(hours, 'hour')} ago`
+  return `${counted(Math.round(hours / 24), 'day')} ago`
+}
 
 function StaffPayments() {
   const [searchParams, setSearchParams] = useSearchParams()
   const status = searchParams.get('status') ?? 'pending'
   const page = Math.max(1, Number(searchParams.get('page') ?? 1))
   const [dispatching, setDispatching] = useState(null)
+  const [recording, setRecording] = useState(null)
+  const [correcting, setCorrecting] = useState(null)
+  // One at a time: a history is a wall of text, and twelve of them open at
+  // once is a screen nobody can find a payment in.
+  const [showingHistory, setShowingHistory] = useState(null)
+  const [raising, setRaising] = useState(false)
+  // Arriving from an order on the Orders screen, which is where somebody
+  // usually notices that money is owed. In the URL rather than in state so
+  // the link works from anywhere and survives a refresh.
+  const raiseFor = searchParams.get('raise')
 
   const {
     query,
+    createPayment,
     dispatchPayment,
+    recordPayment,
+    correctPayment,
     reconcileOne,
     reconcileAll,
     canDispatch,
+    canRaise,
+    canRecord,
+    canCorrect,
   } = useStaffPayments({ status, page })
 
+  function openRaise() {
+    createPayment.reset()
+    setRaising(true)
+  }
+
+  function closeRaise() {
+    setRaising(false)
+    if (raiseFor) {
+      const params = new URLSearchParams(searchParams)
+      params.delete('raise')
+      setSearchParams(params, { replace: true })
+    }
+  }
+
   const payments = query.data?.results ?? []
+  const runs = useReconciliationRuns()
+  // The newest sweep that actually ran. One that stood down because another
+  // held the lock says nothing about whether the payments are current.
+  const lastRun = (runs.data?.runs ?? []).find(
+    (run) => run.finished_at && !run.error.includes('already running'),
+  )
+  const sinceLastRun = lastRun ? howLongAgo(lastRun.finished_at) : ''
+
   const sweep = reconcileAll.data
   const single = reconcileOne.data
 
@@ -45,15 +104,42 @@ function StaffPayments() {
           ))}
         </nav>
 
-        <button
-          type="button"
-          disabled={reconcileAll.isPending}
-          onClick={() => reconcileAll.mutate()}
-          className="h-10 border border-ink px-5 text-badge uppercase disabled:opacity-50"
-        >
-          {reconcileAll.isPending ? 'Checking...' : 'Check all with the provider'}
-        </button>
+        <div className="flex flex-wrap items-center gap-4">
+          <Button
+            variant="secondary"
+            disabled={reconcileAll.isPending}
+            onClick={() => reconcileAll.mutate()}
+          >
+            {reconcileAll.isPending ? 'Checking...' : 'Check all with the provider'}
+          </Button>
+
+          {/* Sales too. The amount is capped at what the order still owes,
+              so raising one cannot invent a debt. */}
+          {canRaise && (
+            <Button onClick={openRaise}>
+              Raise a payment
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* A sweep that quietly stopped looks exactly like a quiet week, so
+          the screen says when it last ran rather than leaving staff to trust
+          that it does. */}
+      {lastRun && (
+        <p className="mt-8 text-meta text-ink-mute">
+          {lastRun.state === 'failed' ? (
+            <span className="text-ink">
+              The last automatic check failed: {lastRun.error}
+            </span>
+          ) : (
+            <>
+              Checked automatically {sinceLastRun}, every{' '}
+              {counted(runs.data.interval_minutes, 'minute')}.
+            </>
+          )}
+        </p>
+      )}
 
       {/* Reported at the top, not on the row. Reconciling a payment usually
           changes its status, which drops it out of the filtered view - so a
@@ -145,29 +231,87 @@ function StaffPayments() {
                   <p className="mt-2 text-meta text-ink-soft">{payment.note}</p>
                 )}
 
-                <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-6">
-                  <button
-                    type="button"
-                    disabled={reconcileOne.isPending}
-                    onClick={() => reconcileOne.mutate(payment.reference)}
-                    className="h-11 border border-ink px-6 text-badge uppercase disabled:opacity-50"
-                  >
-                    Check with provider
-                  </button>
+                {/* The only payment with no provider record behind it, so who
+                    said the money arrived is part of the record. */}
+                {payment.recorded_at && (
+                  <p className="mt-2 text-meta text-ink-soft">
+                    Recorded by {payment.recorded_by_name ?? 'a colleague'} on{' '}
+                    {new Date(payment.recorded_at).toLocaleDateString('en-KE')}
+                    {payment.provider_ref && ` · ${payment.provider_ref}`}
+                  </p>
+                )}
 
-                  {/* Manager only, and only while there is something to
-                      collect. The API refuses a settled payment anyway. */}
-                  {canDispatch && payment.status === 'pending' && (
-                    <button
-                      type="button"
+                <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-6">
+                  {/* Not offered on a bank transfer: there is no provider to
+                      ask, and reconciliation can only answer "staff decides". */}
+                  {payment.method !== 'manual' && (
+                    <Button
+                      variant="secondary"
+                      disabled={reconcileOne.isPending}
+                      onClick={() => reconcileOne.mutate(payment.reference)}
+                    >
+                      Check with provider
+                    </Button>
+                  )}
+
+                  {/* A bank transfer has nothing to send, so this is the only
+                      thing that can close it. */}
+                  {canRecord
+                    && payment.method === 'manual'
+                    && payment.status === 'pending' && (
+                    <Button
+                      onClick={() => {
+                        recordPayment.reset()
+                        setRecording(payment)
+                      }}
+                    >
+                      Record it as received
+                    </Button>
+                  )}
+
+                  {/* Only while there is something to collect. The API
+                      refuses a settled payment anyway. */}
+                  {canDispatch
+                    && payment.method !== 'manual'
+                    && payment.status === 'pending' && (
+                    <Button
                       onClick={() => {
                         dispatchPayment.reset()
                         setDispatching(payment)
                       }}
-                      className="h-11 bg-ink px-6 text-badge uppercase text-surface"
                     >
                       {payment.checkout_sent_at ? 'Send again' : 'Ask for payment'}
-                    </button>
+                    </Button>
+                  )}
+
+                  <Button
+                    variant="quiet"
+                    onClick={() =>
+                      setShowingHistory(
+                        showingHistory === payment.reference
+                          ? null
+                          : payment.reference,
+                      )
+                    }
+                  >
+                    {showingHistory === payment.reference
+                      ? 'Hide the history'
+                      : 'History'}
+                  </Button>
+
+                  {/* The one control that overrules a provider, so it is a
+                      manager's and it reads as an exception rather than a
+                      next step. */}
+                  {canCorrect && (
+                    <Button
+                      variant="quiet"
+                      onClick={() => {
+                        correctPayment.reset()
+                        setCorrecting(payment)
+                      }}
+                    >
+                      Correct it
+                    </Button>
                   )}
 
                   {payment.checkout_url && (
@@ -181,6 +325,12 @@ function StaffPayments() {
                     </a>
                   )}
                 </div>
+
+                {showingHistory === payment.reference && (
+                  <div className="mt-6 border-t border-line pt-6">
+                    <PaymentHistory reference={payment.reference} />
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -192,6 +342,37 @@ function StaffPayments() {
           count={query.data.count}
           hasNext={Boolean(query.data.next)}
           hasPrevious={Boolean(query.data.previous)}
+        />
+      )}
+
+      {correcting && (
+        <CorrectPaymentModal
+          payment={correcting}
+          mutation={correctPayment}
+          onClose={() => setCorrecting(null)}
+        />
+      )}
+
+      {(raising || raiseFor) && canRaise && (
+        <RaisePaymentModal
+          orderId={raiseFor}
+          mutation={createPayment}
+          onClose={closeRaise}
+          // Raising and collecting are two steps on purpose, but they are one
+          // job - so the second one is offered rather than left to be found.
+          onRaised={(payment) => {
+            closeRaise()
+            dispatchPayment.reset()
+            setDispatching(payment)
+          }}
+        />
+      )}
+
+      {recording && (
+        <RecordPaymentModal
+          payment={recording}
+          mutation={recordPayment}
+          onClose={() => setRecording(null)}
         />
       )}
 

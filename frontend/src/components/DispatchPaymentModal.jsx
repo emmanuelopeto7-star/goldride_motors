@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Modal from './Modal'
 import { errorMessages } from '../lib/errors'
 import { formatPrice } from '../lib/format'
+import Button from './Button'
 
 const fieldClass =
   'h-12 w-full border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -34,31 +35,39 @@ function DispatchPaymentModal({ payment, mutation, onClose }) {
         <h2 className="text-center font-serif text-section">Sent</h2>
 
         <p className="mt-6 text-model leading-relaxed text-ink-soft">
-          {result.checkout_url
-            ? 'A checkout link has been created.'
+          {result.pay_url
+            ? 'A payment link has been created.'
             : result.detail}
           {result.emailed === false &&
             ' We could not email it — there is no address on the order, so pass it on yourself.'}
         </p>
 
-        {result.checkout_url && (
-          <a
-            href={result.checkout_url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-6 block break-all text-meta text-ink underline"
-          >
-            {result.checkout_url}
-          </a>
+        {/* The durable link, not the checkout session behind it. This is the
+            one that gets pasted into a message and read tomorrow; a Paystack
+            session would be stale long before then. */}
+        {result.pay_url && (
+          <>
+            <a
+              href={result.pay_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-6 block break-all text-meta text-ink underline"
+            >
+              {result.pay_url}
+            </a>
+            <p className="mt-2 text-meta text-ink-mute">
+              Safe to send on - it stays valid until the invoice is paid.
+            </p>
+          </>
         )}
 
-        <button
-          type="button"
+        <Button
+          size="large"
+          className="mt-8 w-full"
           onClick={onClose}
-          className="mt-8 h-12 w-full bg-ink text-badge uppercase text-surface"
         >
           Done
-        </button>
+        </Button>
       </Modal>
     )
   }
@@ -111,13 +120,14 @@ function DispatchPaymentModal({ payment, mutation, onClose }) {
           </ul>
         )}
 
-        <button
+        <Button
+          size="large"
+          className="mt-6 w-full"
           type="submit"
           disabled={mutation.isPending || payment.method === 'manual'}
-          className="mt-6 h-12 w-full bg-ink text-badge uppercase text-surface disabled:opacity-50"
         >
           {mutation.isPending ? 'Sending...' : 'Send it'}
-        </button>
+        </Button>
       </form>
     </Modal>
   )
