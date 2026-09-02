@@ -26,3 +26,25 @@ export function counted(count, singular, plural) {
   const n = Number(count) || 0
   return `${n.toLocaleString('en-KE')} ${pluralise(n, singular, plural)}`
 }
+
+/** A price short enough for a chart axis: "1.5M", "250K", "0".
+ *
+ *  Not a replacement for formatPrice - an axis has room for five characters
+ *  and a tooltip has room for the real figure, so both exist and the chart
+ *  uses each where it fits.
+ */
+export function compactPrice(value) {
+  const amount = Number(value) || 0
+  const sign = amount < 0 ? '-' : ''
+  const size = Math.abs(amount)
+
+  if (size >= 1_000_000) return `${sign}${trimZero(size / 1_000_000)}M`
+  if (size >= 1_000) return `${sign}${trimZero(size / 1_000)}K`
+  return `${sign}${Math.round(size)}`
+}
+
+function trimZero(value) {
+  // 1.5M keeps its half; 2.0M is just 2M.
+  const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10
+  return String(rounded)
+}
