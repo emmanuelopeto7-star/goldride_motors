@@ -11,20 +11,17 @@ services:
   - type: web
     name: goldride-backend
     runtime: python
-    plan: starter # free cannot mount the disk below, and sleeps after 15 idle minutes
+    # Free, with three consequences worth knowing rather than discovering:
+    # no disk can be mounted, so uploaded photographs 404 under DEBUG=false;
+    # the service sleeps after 15 idle minutes, and a sleeping service drops
+    # websockets, so chat reconnects noisily on the first cold start; and the
+    # free database below is deleted after 30 days.
+    plan: free
     buildCommand: bash build.sh
     # Daphne, not gunicorn: gunicorn is WSGI and cannot carry a websocket at
     # all. Under it the chat handshake fails and the browser retries forever.
     startCommand: cd backend && daphne -b 0.0.0.0 -p $PORT goldride_project.asgi:application
     healthCheckPath: /api/cars/
-
-    # Uploaded car photographs. Without this, DEBUG=false serves /media/ as 404
-    # - see DEPLOY.md - and Render's filesystem is wiped on every deploy anyway,
-    # so an ephemeral disk would lose them even while they appeared to work.
-    disk:
-      name: media
-      mountPath: /opt/render/project/src/backend/media
-      sizeGB: 1
 
     envVars:
       - key: PYTHON_VERSION
@@ -97,4 +94,4 @@ databases:
   - name: goldride-db
     databaseName: goldride_motors
     user: goldride
-    plan: basic-256mb
+    plan: free # deleted after 30 days

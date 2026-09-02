@@ -29,7 +29,7 @@ a half-deployed service over a healthy release.
 | `ALLOWED_HOSTS` | Comma-separated. `PUBLIC_HOSTNAME` is merged in as well, for hosts that inject the public hostname rather than letting you name it. |
 | `PAYSTACK_SECRET_KEY` | Card payments and every webhook signature check. |
 | `MPESA_*` | Consumer key/secret, shortcode, passkey, callback URL, environment. |
-| `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | Without these Django uses the console backend and **every message the app sends reaches nobody**. |
+| `EMAIL_BACKEND`, `RESEND_API_KEY` | Without these Django uses the console backend and **every message the app sends reaches nobody**. See Mail below. |
 | `DEFAULT_FROM_EMAIL` | The address customers see. |
 | `SITE_URL` | Where `/pay/<reference>/` links point — the backend's own origin. |
 | `FRONTEND_URL` | Where tracking, account and chat links in emails point. |
@@ -45,7 +45,23 @@ itself and be believed.
 
 ## Mail
 
-Once the SMTP variables are set:
+Mail goes through **Resend over HTTPS**, not SMTP:
+
+```
+EMAIL_BACKEND=goldride_app.email_backends.ResendBackend
+RESEND_API_KEY=re_...
+DEFAULT_FROM_EMAIL=noreply@goldridemotors.co.ke
+```
+
+HTTPS rather than SMTP on purpose — managed hosts block outbound SMTP far more
+often than they block an ordinary API call, and that is a bad thing to discover
+after everything else is wired. Django's SMTP backend still works if you would
+rather use it: point `EMAIL_BACKEND` at
+`django.core.mail.backends.smtp.EmailBackend` and set the `EMAIL_HOST` group
+(Resend's SMTP host is `smtp.resend.com`, username the literal `resend`, the
+API key as the password).
+
+Then:
 
 ```bash
 python manage.py mailtest you@example.com
@@ -56,8 +72,12 @@ goes through `goldride_app/mail.py`, which logs failures rather than swallowing
 them — the previous code passed `fail_silently=True` everywhere, so a
 misconfigured server looked exactly like a working one.
 
-Add SPF and DKIM records for `goldridemotors.co.ke`, or mail from `noreply@`
-lands in spam.
+**The from-address domain must be verified in Resend**, and Resend will not
+send from an unverified one. Verifying it is also how SPF and DKIM get set up
+for `goldridemotors.co.ke` — Resend generates the exact DNS records. Without
+them, mail from `noreply@` lands in spam. `onboarding@resend.dev` sends without
+any of that but delivers only to your own Resend account address, so it is for
+testing and nothing else.
 
 ## Payment reconciliation
 
@@ -108,6 +128,10 @@ Both cost money, which is why this is a decision rather than a task. Note that
 an ephemeral filesystem loses uploads on every deploy even when they are served,
 so "no disk" is not a middle option.
 
+**Currently deployed without either**, on Render's free plan: `render.yaml`
+mounts no disk, so `/media/` returns 404 in production and car photographs do
+not appear. That is a known, accepted state for now, not a bug to hunt.
+
 Dealer paperwork is **not** affected and must never be moved into a public media
 path: those files are streamed by a staff-only view that checks the caller
 first. See `dealers/models.py`.
@@ -133,6 +157,39 @@ to be raised by hand once HTTPS has been reliable for a while.
 
 ## Frontend
 
-Not deployed yet. `VITE_API_URL` still points at `http://localhost:8000`, so a
-deployed frontend would call a developer's laptop. Where it is hosted has not
-been decided.
+Vercel, from `frontend/`. Set the project's **Root Directory** to `frontend` —
+the repository root holds no application, and Vercel will otherwise try to build
+the container.
+
+`vercel.json` rewrites everything except `/assets/` to `index.html`. Without it
+react-router's own URLs — `/staff/overview`, `/cars/12`, `/dealer` — return 404
+on refresh or when opened directly, because Vercel looks for a file at that path.
+
+Environment variables (Production scope):
+
+| Variable | Value |
+|---|---|
+| `VITE_API_URL` | the Render service's `https://` URL, no trailing slash |
+| `VITE_GOOGLE_CLIENT_ID` | same value as the backend's |
+| `VITE_LINKEDIN_REDIRECT_URI` | `https://<vercel-domain>/auth/linkedin/callback` |
+
+**These are baked into the bundle at build time, not read at runtime.** Changing
+one in the Vercel dashboard does nothing until you redeploy. The websocket URL
+is derived from `VITE_API_URL` in `lib/socket.js`, so there is no second address
+to keep in step — but it also means a wrong `VITE_API_URL` breaks chat and the
+API together.
+
+## Order of deployment
+
+The two halves each need the other's URL, so it takes three passes:
+
+1. **Backend first**, with `CORS_ALLOWED_ORIGINS` and `FRONTEND_URL` left unset.
+   Nothing can call it yet; that is fine. Note the URL it gets.
+2. **Frontend**, with `VITE_API_URL` set to that URL.
+3. **Back to the backend**: set `CORS_ALLOWED_ORIGINS` and `FRONTEND_URL` to the
+   Vercel domain and redeploy. Until this pass the browser blocks every request
+   as cross-origin, and the app looks broken in a way the logs do not explain.
+
+Then, outside both dashboards: add the Vercel domain to the Google OAuth client's
+**Authorized JavaScript origins**, and `https://<vercel-domain>/auth/linkedin/callback`
+to LinkedIn's redirect URLs. Sign-in fails with a provider-side error otherwise.
