@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 User = get_user_model()
@@ -41,6 +42,7 @@ class StaffMemberSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["last_login", "date_joined", "is_superuser"]
 
+    @extend_schema_field(serializers.CharField())
     def get_full_name(self, user):
         return user.get_full_name()
 
