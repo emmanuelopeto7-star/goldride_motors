@@ -17,8 +17,16 @@ from rest_framework.authtoken.models import Token
 
 User = get_user_model()
 
-# Everything Sales may reach. Deletes, money decisions and the rates are not
-# on this list - see MANAGER_ONLY.
+REFUSED = (401, 403)
+
+# Real UUID, no such payment. The reference routes take <uuid:reference>, and
+# a path that does not resolve answers 404 to everybody - which would sail
+# through this probe while proving nothing about who may call it.
+NO_SUCH_PAYMENT = "00000000-0000-0000-0000-000000000000"
+
+# Everything Sales may reach, which includes collecting money: raising an
+# invoice and chasing it is the job. Deletes, approvals and the rates are the
+# decisions about the money, and those are not on this list - see MANAGER_ONLY.
 SALES_MAY = [
     ("staff/cars/", "get"), ("staff/cars/", "post"),
     ("staff/cars/1/", "get"), ("staff/cars/1/", "patch"),
@@ -36,12 +44,17 @@ SALES_MAY = [
     ("staff/sourced-units/", "get"), ("staff/sourced-units/", "post"),
     ("staff/sourced-units/1/", "patch"),
     ("staff/sourced-units/1/push-to-stock/", "post"),
-    ("staff/payments/", "get"),
+    ("staff/payments/", "get"), ("staff/payments/", "post"),
+    (f"staff/payments/{NO_SUCH_PAYMENT}/dispatch/", "post"),
+    (f"staff/payments/{NO_SUCH_PAYMENT}/reconcile/", "post"),
+    ("staff/payments/reconcile/", "post"),
     ("staff/tickets/", "get"), ("staff/tickets/1/", "get"),
     ("staff/tickets/1/claim/", "post"), ("staff/tickets/1/release/", "post"),
     ("staff/tickets/1/close/", "post"), ("staff/tickets/1/reply/", "post"),
     ("purchases/staff/", "get"), ("purchases/staff/1/", "get"),
     ("inquiries/all/", "get"), ("inquiries/1/", "get"),
+    ("staff/chats/", "get"), ("staff/chats/1/", "get"),
+    ("staff/chats/1/", "post"), ("staff/chats/1/read/", "post"),
 ]
 
 # Sales must be refused these. Deleting is a supervisor's act; approving moves
@@ -53,7 +66,7 @@ MANAGER_ONLY = [
     ("staff/orders/1/", "delete"),
     ("staff/sourced-units/1/", "delete"),
     ("staff/import-rates/", "post"),
-    ("staff/payments/", "post"),
+    (f"staff/payments/{NO_SUCH_PAYMENT}/record/", "post"),
     ("staff/team/", "get"),
     ("staff/team/", "post"),
     ("staff/team/1/", "get"),
@@ -62,7 +75,6 @@ MANAGER_ONLY = [
     ("purchases/staff/1/reject/", "post"),
 ]
 
-REFUSED = (401, 403)
 
 
 class StaffPermissionSurfaceTests(TestCase):

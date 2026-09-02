@@ -52,10 +52,12 @@ class Ticket(models.Model):
     APPROVAL = "approval"
     SOURCING = "sourcing"
     ENQUIRY = "enquiry"
+    DEALER = "dealer"
     KIND_CHOICES = [
         (APPROVAL, "Purchase approval"),
         (SOURCING, "Import sourcing"),
         (ENQUIRY, "Enquiry"),
+        (DEALER, "Dealer application"),
     ]
 
     OPEN = "open"
@@ -93,6 +95,13 @@ class Ticket(models.Model):
         blank=True,
         related_name="ticket",
     )
+    dealer_application = models.OneToOneField(
+        "dealers.DealerApplication",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ticket",
+    )
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=OPEN)
     claimed_by = models.ForeignKey(
@@ -121,18 +130,28 @@ class Ticket(models.Model):
                         purchase_request__isnull=False,
                         import_request__isnull=True,
                         inquiry__isnull=True,
+                        dealer_application__isnull=True,
                     )
                     | Q(
                         kind="sourcing",
                         import_request__isnull=False,
                         purchase_request__isnull=True,
                         inquiry__isnull=True,
+                        dealer_application__isnull=True,
                     )
                     | Q(
                         kind="enquiry",
                         inquiry__isnull=False,
                         purchase_request__isnull=True,
                         import_request__isnull=True,
+                        dealer_application__isnull=True,
+                    )
+                    | Q(
+                        kind="dealer",
+                        dealer_application__isnull=False,
+                        purchase_request__isnull=True,
+                        import_request__isnull=True,
+                        inquiry__isnull=True,
                     )
                 ),
                 name="ticket_subject_matches_kind",
@@ -150,12 +169,27 @@ class Ticket(models.Model):
         return f"#{self.pk} {self.get_kind_display()}"
 
     @property
+    def customer(self):
+        """The account this ticket is for, if there is one.
+
+        Not every ticket has one: an import request may be raised by a guest,
+        who has contact details but no login. Chat needs an account to belong
+        to, so a ticket with no customer simply has no conversation.
+        """
+        subject = self.subject
+        if subject is None:
+            return None
+        return getattr(subject, "customer", None)
+
+    @property
     def subject(self):
         """The request this ticket is about, whichever kind it is."""
         if self.kind == self.APPROVAL:
             return self.purchase_request
         if self.kind == self.ENQUIRY:
             return self.inquiry
+        if self.kind == self.DEALER:
+            return self.dealer_application
         return self.import_request
 
     def claim(self, user):

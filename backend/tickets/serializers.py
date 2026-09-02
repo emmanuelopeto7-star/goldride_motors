@@ -20,6 +20,10 @@ class TicketSerializer(serializers.ModelSerializer):
         source="claimed_by.username", read_only=True, default=None
     )
     subject_id = serializers.SerializerMethodField()
+    # Whether there is an account behind this ticket. A guest may raise an
+    # import request - contact details, no login - and there is nowhere to
+    # deliver a chat message to one, so the screen offers the phone instead.
+    has_customer = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
     customer = serializers.SerializerMethodField()
     amount = serializers.SerializerMethodField()
@@ -38,10 +42,15 @@ class TicketSerializer(serializers.ModelSerializer):
             "closed_at",
             "created_at",
             "subject_id",
+            "has_customer",
             "title",
             "customer",
             "amount",
         ]
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_has_customer(self, ticket):
+        return ticket.customer is not None
 
     @extend_schema_field(serializers.IntegerField(allow_null=True))
     def get_subject_id(self, ticket):
@@ -58,6 +67,9 @@ class TicketSerializer(serializers.ModelSerializer):
             # Both hang off a car we already list.
             car = subject.car
             return f"{car.year} {car.make} {car.model}"
+        if ticket.kind == Ticket.DEALER:
+            # A dealership's trading name, or a private seller's own name.
+            return subject.display_name
         return f"{subject.year} {subject.make} {subject.model}"
 
     @extend_schema_field(serializers.CharField())
@@ -71,6 +83,8 @@ class TicketSerializer(serializers.ModelSerializer):
             # The name typed into the form. An enquiry can be made by someone
             # whose account name says nothing useful.
             return subject.name
+        if ticket.kind == Ticket.DEALER:
+            return subject.contact_name
         # A sourcing request may come from a guest, so the name is on the row
         # rather than on a user.
         return subject.contact_name
@@ -85,4 +99,8 @@ class TicketSerializer(serializers.ModelSerializer):
         if ticket.kind in (Ticket.APPROVAL, Ticket.ENQUIRY):
             # The price lives on the car; the request only points at it.
             return subject.car.price
+        if ticket.kind == Ticket.DEALER:
+            # No amount is on the table yet - a dealership is asking to
+            # start, not offering a figure.
+            return None
         return subject.budget_kes
