@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import Button from '../../components/Button'
 import Page from '../../components/Page'
 import { useAuth } from '../../context/AuthContext'
 
@@ -14,6 +15,9 @@ import { useAuth } from '../../context/AuthContext'
  */
 
 const TABS = [
+  // Manager and owner only, matching the endpoint behind it. A tab that
+  // leads to a 403 is the same mistake as a control with no endpoint.
+  ['/staff/overview', 'Overview', true],
   // One queue where there were two. Approvals and Sourcing are kinds of
   // ticket now, not screens of their own.
   ['/staff/tickets', 'Queue'],
@@ -21,6 +25,8 @@ const TABS = [
   ['/staff/orders', 'Orders'],
   ['/staff/payments', 'Payments'],
   ['/staff/enquiries', 'Enquiries'],
+  ['/staff/chats', 'Chats'],
+  ['/staff/dealers', 'Dealers'],
   ['/staff/settings', 'Settings'],
 ]
 
@@ -46,13 +52,9 @@ function StaffLayout() {
                   greyed-out button. */}
               {isManager ? ' · Manager' : ' · Sales'}
             </span>
-            <button
-              type="button"
-              onClick={signOut}
-              className="flex h-10 shrink-0 items-center rounded-full border border-line px-5 text-meta"
-            >
+            <Button variant="pill" onClick={signOut} className="border-line">
               Sign out
-            </button>
+            </Button>
           </div>
         </div>
       </header>
@@ -61,12 +63,16 @@ function StaffLayout() {
         <h1 className="font-serif text-h1">Staff</h1>
 
         <nav className="mt-8 flex flex-wrap gap-6 border-b border-line">
-          {TABS.map(([to, label]) => (
+          {TABS.filter(([, , managerOnly]) => !managerOnly || isManager).map(([to, label]) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `-mb-px border-b-2 pb-3 text-meta transition-colors ${
+                // pt-3 as well as pb-3: the tab was a 13px label with 12px
+                // under it and nothing above, which is a 34px target on a
+                // touchscreen. The rule underneath does not move - pb-3 still
+                // sets the distance to it.
+                `-mb-px border-b-2 pt-3 pb-3 text-meta transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current ${
                   isActive
                     ? 'border-ink text-ink'
                     : 'border-transparent text-ink-soft hover:text-ink'

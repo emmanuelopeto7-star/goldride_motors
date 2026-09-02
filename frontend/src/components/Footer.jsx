@@ -74,6 +74,18 @@ function Footer() {
                 </a>
               </li>
               <li className="text-meta text-surface/70">Nairobi, Kenya</li>
+              {/* §10.4 - it points at a page that exists. Boxed rather than
+                  set as one more link in the column: a dealership arriving at
+                  the bottom of the page is here on different business from
+                  everybody else reading a contact list. */}
+              <li className="pt-4">
+                <Link
+                  to="/list-with-us"
+                  className="inline-block border border-white/40 px-5 py-3 text-meta text-surface transition-colors hover:border-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                >
+                  List your cars with us
+                </Link>
+              </li>
             </ul>
           </div>
         </div>

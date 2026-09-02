@@ -1,6 +1,9 @@
+import Button from './Button'
+import ChatLauncher from './ChatLauncher'
 import { useState } from 'react'
 import {
   Link,
+  NavLink,
   Outlet,
   useLocation,
   useNavigate,
@@ -15,8 +18,44 @@ import BrandStrip from './BrandStrip'
 import Footer from './Footer'
 import MobileMenu from './MobileMenu'
 
-const pillBase =
-  'flex h-10 shrink-0 items-center rounded-full border px-5 text-meta transition-colors duration-200'
+/** The text links in the header row.
+ *
+ *  **Underline means "you are here", not "this is a link".** §2.1 gives
+ *  underline to links *and active states*, and these were underlined
+ *  permanently - so all four claimed to be the current page at once, the row
+ *  read as four competing emphases, and there was no mark left to show which
+ *  page anybody was actually on. At rest they are plain; hover underlines to
+ *  say it is clickable; the route you are on keeps the underline.
+ *
+ *  Secondary ink at rest, primary on hover and when active - three states in
+ *  a palette with no colour in it, done with weight of ink rather than hue.
+ *
+ *  `py-3 -my-3` rather than a taller link: it grows the hit target to a
+ *  comfortable size without changing where anything sits, because the row is
+ *  vertically centred in a fixed 80px header. The focus ring is
+ *  `outline-current` rather than the browser's - that default is orange, and
+ *  §2.2 has no colour in it - which also inverts with the header for free.
+ */
+const NAV_LINK_BASE =
+  'hidden shrink-0 py-3 -my-3 text-meta underline-offset-4 transition-colors duration-200 lg:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current'
+
+function navLinkClass({ isActive, overlay }) {
+  // Over the hero the rest state stays full white and only the underline
+  // separates active from not. The footer can dim its links to 70% because it
+  // sits on a flat #1A1A1A and the contrast is a number you can check; here
+  // the backdrop is whatever photograph marketing uploaded, and 70% white on
+  // a bright patch of one is a link nobody can read.
+  const rest = overlay ? 'text-surface' : 'text-ink-soft'
+  const active = overlay ? 'text-surface' : 'text-ink'
+  const hover = overlay ? '' : 'hover:text-ink'
+
+  return [
+    NAV_LINK_BASE,
+    isActive ? `${active} underline` : `${rest} ${hover} hover:underline`,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
 
 function Layout() {
   const navigate = useNavigate()
@@ -25,7 +64,7 @@ function Layout() {
   const [term, setTerm] = useState(searchParams.get('search') ?? '')
   const [authOpen, setAuthOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const { user, isSales, signOut } = useAuth()
+  const { user, isSales, isDealer, signOut } = useAuth()
 
   const scrolled = useScrolled(80)
   // Shares a cache entry with Hero, so this costs no extra request. Keyed on
@@ -94,52 +133,68 @@ function Layout() {
               guarded and the API re-checks regardless - this is a shortcut,
               not the permission. */}
           {isSales && (
-            <Link
+            <NavLink
               to="/staff"
-              className={`hidden shrink-0 text-meta underline lg:block ${
-                overlay ? 'text-surface' : 'text-ink'
-              }`}
+              className={({ isActive }) => navLinkClass({ isActive, overlay })}
             >
               Staff
-            </Link>
+            </NavLink>
           )}
 
-          <Link
-            to="/import"
-            className={`hidden shrink-0 text-meta underline lg:block ${
-              overlay ? 'text-surface' : 'text-ink'
-            }`}
-          >
+          <NavLink
+              to="/import"
+              className={({ isActive }) => navLinkClass({ isActive, overlay })}
+            >
             Import a car
-          </Link>
+          </NavLink>
+
+          {/* The way in for other dealerships. It lived only in the footer,
+              which is a poor place for the one thing a visiting dealer came
+              to do. Hidden from a dealer who is already signed in - they have
+              their own area, and the application form is behind them. */}
+          {!isDealer && (
+            <NavLink
+              to="/list-with-us"
+              className={({ isActive }) => navLinkClass({ isActive, overlay })}
+            >
+              List your cars
+            </NavLink>
+          )}
+
+          {isDealer && (
+            <NavLink
+              to="/dealer"
+              className={({ isActive }) => navLinkClass({ isActive, overlay })}
+            >
+              Your cars
+            </NavLink>
+          )}
 
           {user && (
-            <Link
+            <NavLink
               to="/my/orders"
-              className={`hidden shrink-0 text-meta underline lg:block ${
-                overlay ? 'text-surface' : 'text-ink'
-              }`}
+              className={({ isActive }) => navLinkClass({ isActive, overlay })}
             >
               My orders
-            </Link>
+            </NavLink>
           )}
 
           {user ? (
-            <button
-              type="button"
+            <Button
+              variant="pill"
               onClick={signOut}
-              className={`${pillBase} ${overlay ? 'border-white/40' : 'border-line'}`}
+              className={overlay ? 'border-white/40' : 'border-line'}
             >
               Sign out
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
+              variant="pill"
               onClick={() => setAuthOpen(true)}
-              className={`${pillBase} ${overlay ? 'border-white/40' : 'border-line'}`}
+              className={overlay ? 'border-white/40' : 'border-line'}
             >
               Sign in
-            </button>
+            </Button>
           )}
           </div>
         </div>
@@ -161,6 +216,10 @@ function Layout() {
       )}
 
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
+
+      {/* Every shopfront page, so a question can be asked from wherever it
+          occurred to them rather than only from the account area. */}
+      <ChatLauncher />
     </div>
   )
 }
