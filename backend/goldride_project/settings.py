@@ -303,6 +303,12 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=not EMAIL_USE_SSL, cast=bool)
 # during a request that is approving a sale.
 EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
 
+# Used only by goldride_app.email_backends.ResendBackend, which goes out over
+# HTTPS instead of SMTP - managed hosts block outbound SMTP far more often than
+# they block a normal API call. The EMAIL_HOST settings above still apply if
+# EMAIL_BACKEND is pointed back at Django's SMTP backend.
+RESEND_API_KEY = config('RESEND_API_KEY', default='')
+
 DEFAULT_FROM_EMAIL = config(
     'DEFAULT_FROM_EMAIL', default='noreply@goldridemotors.co.ke'
 )
