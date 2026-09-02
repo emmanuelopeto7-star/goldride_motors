@@ -16,16 +16,24 @@ export function nextStage(current) {
   return index >= 0 && index < STAGES.length - 1 ? STAGES[index + 1] : null
 }
 
-export function useStaffOrders({ stage = '', cancelled = '', page = 1 } = {}) {
+export function useStaffOrders({
+  stage = '',
+  cancelled = '',
+  search = '',
+  page = 1,
+} = {}) {
   const queryClient = useQueryClient()
 
   const params = {}
   if (stage) params.current_stage = stage
   if (cancelled) params.cancelled = cancelled
+  // Matches customer_name, phone and car_description on the server - the
+  // three things a member of staff knows about an order they are looking for.
+  if (search) params.search = search
   if (page > 1) params.page = page
 
   const query = useQuery({
-    queryKey: ['staff-orders', stage, cancelled, page],
+    queryKey: ['staff-orders', stage, cancelled, search, page],
     queryFn: async () => {
       const res = await api.get('/api/staff/orders/', { params })
       const data = res.data
