@@ -138,7 +138,16 @@ cors_origins_str = config(
     'CORS_ALLOWED_ORIGINS',
     default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000',
 )
-CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_str.split(',') if o.strip()]
+# Trailing slashes are stripped rather than rejected. An origin is scheme,
+# host and port and nothing else, so django-cors-headers refuses one with a
+# path - and `/` is a path. Every browser and dashboard shows a URL with that
+# slash, so pasting one in is the obvious thing to do, and it failed the whole
+# deploy at `manage.py check` with the site otherwise ready to serve.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip().rstrip('/')
+    for origin in cors_origins_str.split(',')
+    if origin.strip().rstrip('/')
+]
 CORS_ALLOW_CREDENTIALS = True
 
 MIDDLEWARE = [
@@ -324,8 +333,11 @@ DEALER_ACTIVATION_TIMEOUT = config(
 
 # Where the confirmation link points (this API), and where it sends the
 # browser afterwards (the React app).
-SITE_URL = config('SITE_URL', default='http://127.0.0.1:8000')
-FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+# Both are joined to paths with an f-string, so a pasted trailing slash would
+# produce `https://host//pay/<ref>/`. Some servers 404 that; all of them look
+# wrong in an email a customer is reading.
+SITE_URL = config('SITE_URL', default='http://127.0.0.1:8000').rstrip('/')
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173').rstrip('/')
 
 # How long a card checkout link is offered for.
 #
