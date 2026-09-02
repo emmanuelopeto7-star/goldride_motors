@@ -110,6 +110,11 @@ SECURE_HSTS_PRELOAD = config('SECURE_HSTS_PRELOAD', default=False, cast=bool)
 # Application definition
 
 INSTALLED_APPS = [
+    # First, deliberately: daphne takes over runserver so development speaks
+    # the same protocol as production. A websocket that only works when
+    # deployed is one nobody tests.
+    'daphne',
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -126,6 +131,8 @@ INSTALLED_APPS = [
     'payments',
     'purchases',
     'tickets',
+    'dealers',
+    'chat',
     'corsheaders',
     'drf_spectacular',
 ]
@@ -170,6 +177,31 @@ TEMPLATES = [
 WSGI_APPLICATION = 'goldride_project.wsgi.application'
 
 
+# --- realtime ---------------------------------------------------------------
+ASGI_APPLICATION = "goldride_project.asgi.application"
+
+# Redis when there is a Redis, memory when there is not.
+#
+# The in-memory layer is per process: two workers cannot see each other's
+# groups, so a message published by one is invisible to a customer connected
+# to the other. That is fine for development and for a single-instance
+# deploy, and silently wrong the moment the service scales - hence reading
+# the URL from the environment rather than choosing here.
+REDIS_URL = config('REDIS_URL', default='')
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+    }
+
+
 
 
 # Database
@@ -212,6 +244,13 @@ REST_FRAMEWORK = {
         "social": "30/hour",
         "login": "10/hour",
         "verify": "20/hour",
+        # A dealership applies once. Anything beyond a handful an hour
+        # from one address is not a dealership.
+        "dealers": "5/hour",
+        # Chat is a conversation, not a form submission - a rate that suits an
+        # enquiry would cut somebody off mid-sentence. High enough to type
+        # freely, low enough that a runaway client cannot flood the inbox.
+        "chat": "120/hour",
     },
         "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
@@ -271,10 +310,43 @@ DEFAULT_FROM_EMAIL = config(
 # Where "tell sales" messages go. Was hardcoded at five call sites.
 SALES_EMAIL = config('SALES_EMAIL', default='sales@goldridemotors.co.ke')
 
+# How long a new dealer has to set their password before the invitation
+# link dies. A week: long enough to survive a holiday, short enough that a
+# forwarded email does not stay usable forever.
+DEALER_ACTIVATION_TIMEOUT = config(
+    'DEALER_ACTIVATION_TIMEOUT', default=60 * 60 * 24 * 7, cast=int
+)
+
 # Where the confirmation link points (this API), and where it sends the
 # browser afterwards (the React app).
 SITE_URL = config('SITE_URL', default='http://127.0.0.1:8000')
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
+# How long a card checkout link is offered for.
+#
+# Ours, not Paystack's: their initialize call takes no expiry, so the URL they
+# mint stays valid at their end whatever we do. What expires is our willingness
+# to hand it out - after this the app stops showing it and offers a fresh one
+# instead. That matters because a link is only worth showing while the price,
+# the car and the reservation behind it still hold.
+CHECKOUT_LINK_MINUTES = config('CHECKOUT_LINK_MINUTES', default=10, cast=int)
+
+# How often the application reconciles pending payments against Paystack and
+# Safaricom, on a background thread it starts itself. A dropped webhook means
+# money taken and not recorded against an order, and until this existed the
+# only thing that found it was a member of staff clicking a button.
+#
+# Set to 0 if an external scheduler runs `manage.py reconcile_payments`
+# instead, so the two do not both sweep.
+RECONCILE_INTERVAL_MINUTES = config(
+    'RECONCILE_INTERVAL_MINUTES', default=30, cast=int
+)
+
+# How settled a payment must be before the sweep asks about it. Somebody is
+# still typing a card number into a tab for the first minute or two of a
+# payment's life; a live card checkout is separately protected by
+# ABANDONED_GRACE in payments/reconciliation.py.
+RECONCILE_STALE_MINUTES = config('RECONCILE_STALE_MINUTES', default=2, cast=int)
 
 # Three days. Long enough for an email left until the weekend, short enough
 # that a forwarded link stops working.
