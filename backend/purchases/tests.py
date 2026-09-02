@@ -68,7 +68,12 @@ class ApprovalNotifiesTheCustomerTests(TestCase):
 
         to_customer = [m for m in mail.outbox if m.to == ["buyer@example.com"]]
         self.assertEqual(len(to_customer), 1)
-        self.assertIn("https://checkout.paystack.com/xyz789", to_customer[0].body)
+        # Our link rather than the provider's: a Paystack session goes stale
+        # in minutes, and this is an email somebody opens tomorrow.
+        self.assertIn(
+            f"/pay/{self.request.order.payments.first().reference}/",
+            to_customer[0].body,
+        )
 
     def test_a_refused_payment_still_tells_the_customer_what_happens_next(self):
         """The common case at these prices, and the one that used to be silent."""

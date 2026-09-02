@@ -59,7 +59,9 @@ def verify_paystack_payment(reference):
     resp = requests.get(
         f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
         headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
-        timeout=120,
+        # 120s was long enough for one slow verify to hold a webhook, a
+        # sweep or a customer's page load open for two minutes.
+        timeout=20,
     )
 
     try:

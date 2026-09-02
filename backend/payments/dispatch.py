@@ -1,4 +1,8 @@
+from datetime import timedelta
 from decimal import Decimal
+
+from django.conf import settings
+from django.utils import timezone
 
 from .mpesa import start_mpesa_payment
 from .services import start_paystack_payment_detailed
@@ -28,7 +32,17 @@ def _dispatch_card(payment, email):
         return False, detail
 
     payment.checkout_url = url
-    payment.save(update_fields=["checkout_url", "updated_at"])
+    payment.checkout_email = email
+    # Stamped here rather than worked out on read, so the clock starts when
+    # the link was actually minted - not when somebody happens to look.
+    payment.checkout_expires_at = timezone.now() + timedelta(
+        minutes=settings.CHECKOUT_LINK_MINUTES
+    )
+    payment.save(
+        update_fields=[
+            "checkout_url", "checkout_email", "checkout_expires_at", "updated_at"
+        ]
+    )
     return True, url
 
 

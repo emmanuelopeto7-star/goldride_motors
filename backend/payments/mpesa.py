@@ -1,6 +1,7 @@
 import base64
 import requests
 from datetime import datetime
+from decimal import ROUND_CEILING
 from decouple import config
 
 MPESA_ENVIRONMENT = config("MPESA_ENVIRONMENT", default="sandbox")
@@ -38,6 +39,22 @@ def build_password():
     return password, timestamp
 
 
+def whole_shillings(amount):
+    """What Daraja can actually move, rounded up.
+
+    The STK push takes an integer - M-PESA does not deal in cents - and this
+    used to be a bare int(), which truncates. An invoice of 5,000.75 asked the
+    customer for 5,000 and was then marked paid in full, because the callback
+    re-queries the status and never compares the amount: 75 cents quietly
+    uncollected on an order that reads as settled.
+
+    Rounded up rather than to nearest, because the two errors are not equal.
+    Over by less than a shilling is noise; under by any amount is a balance
+    that can never be cleared through this rail.
+    """
+    return int(amount.to_integral_value(rounding=ROUND_CEILING))
+
+
 def start_mpesa_payment(payment, phone):
     token = get_mpesa_token()
     if token is None:
@@ -53,7 +70,7 @@ def start_mpesa_payment(payment, phone):
             "Password": password,
             "Timestamp": timestamp,
             "TransactionType": "CustomerPayBillOnline",
-            "Amount": int(payment.amount),
+            "Amount": whole_shillings(payment.amount),
             "PartyA": phone,
             "PartyB": MPESA_SHORTCODE,
             "PhoneNumber": phone,

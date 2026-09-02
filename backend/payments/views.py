@@ -3,18 +3,22 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.shortcuts import redirect
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import extend_schema
 
+from rest_framework.permissions import AllowAny
+
 from goldride_app.permissions import IsCustomer
 
 from .dispatch import dispatch_payment
-from .models import Payment
+from .audit import settle
+from .models import Payment, PaymentEvent
 from .mpesa import query_mpesa_payment
-from .reconciliation import reconcile_pending
 from .serializers import (
     CheckoutResponseSerializer,
     DispatchRequestSerializer,
@@ -33,9 +37,18 @@ class MyPaymentsView(generics.ListAPIView):
     permission_classes = [IsCustomer]
 
     def get_queryset(self):
-        mine = Payment.objects.filter(order__customer=self.request.user)
-        reconcile_pending(mine.filter(status="pending"))
-        return mine.order_by("-created_at")
+        # This used to reconcile the caller's pending payments inline. It made
+        # a customer's page load wait on Paystack and Safaricom - up to two
+        # minutes per payment on the old timeout - and a hung provider held the
+        # request thread open for all of it.
+        #
+        # Nothing is lost by removing it. The happy path is the webhook, which
+        # is immediate; the backstop is the sweep, which now runs on its own
+        # every RECONCILE_INTERVAL_MINUTES instead of only when somebody looks.
+        return (
+            Payment.objects.filter(order__customer=self.request.user)
+            .order_by("-created_at")
+        )
 
 
 class MyPaymentDispatchView(APIView):
@@ -141,22 +154,27 @@ class PaystackWebhookView(APIView):
             return Response({"status": "not successful"})
 
         try:
-            with transaction.atomic():
-                payment = Payment.objects.select_for_update().get(
-                    paystack_ref=reference, status="pending"
-                )
-
-                if verified.get("amount") != int(payment.amount * 100):
-                    payment.note = "amount mismatch"
-                    payment.save()
-                    return Response({"status": "amount mismatch"})
-
-                payment.status = "paid"
-                payment.provider_ref = str(verified.get("id"))
-                payment.save()
+            payment = Payment.objects.get(
+                paystack_ref=reference, status="pending"
+            )
         except (Payment.DoesNotExist, ValidationError):
             return Response({"status": "no pending payment"})
 
+        if verified.get("amount") != int(payment.amount * 100):
+            payment.note = "amount mismatch"
+            payment.save(update_fields=["note", "updated_at"])
+            return Response({"status": "amount mismatch"})
+
+        # settle() holds the lock and re-checks the status inside it, so the
+        # race this used to guard against is still guarded - and the change is
+        # now written into the payment's history rather than only onto the row.
+        settle(
+            payment,
+            to_status="paid",
+            source=PaymentEvent.WEBHOOK,
+            detail=f"Paystack charge.success, verified as {reference}",
+            provider_ref=str(verified.get("id")),
+        )
         return Response({"status": "ok"})
 
 
@@ -184,14 +202,61 @@ class MpesaCallbackView(APIView):
                 receipt = item.get("Value", "")
 
         try:
-            with transaction.atomic():
-                payment = Payment.objects.select_for_update().get(
-                    checkout_request_id=checkout_id, status="pending"
-                )
-                payment.status = "paid"
-                payment.provider_ref = str(receipt)
-                payment.save()
+            payment = Payment.objects.get(
+                checkout_request_id=checkout_id, status="pending"
+            )
         except Payment.DoesNotExist:
             return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
+        settle(
+            payment,
+            to_status="paid",
+            source=PaymentEvent.CALLBACK,
+            detail=f"M-PESA receipt {receipt}" if receipt else "M-PESA callback",
+            provider_ref=str(receipt),
+        )
         return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+class PayNowView(APIView):
+    """Follow a payment link: mint a fresh checkout and forward to it.
+
+    Deliberately open, and keyed on the reference alone - see the note in
+    pay_link.py. It only ever forwards to the provider; it reveals nothing
+    about the payment to whoever opens it, and settled or cancelled invoices
+    land back on the site rather than at a checkout.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "payments"
+
+    @extend_schema(
+        responses={302: None},
+        description="Redirects to a freshly minted Paystack checkout for this "
+                    "payment. Settled or unknown references are sent to the "
+                    "site rather than told which they were.",
+    )
+    def get(self, request, reference):
+        payment = Payment.objects.filter(
+            reference=reference, status="pending", method="card"
+        ).first()
+
+        if payment is None:
+            # Same answer for settled, cancelled and never-existed: whoever is
+            # holding this link is not owed a report on somebody's invoice.
+            return redirect(f"{settings.FRONTEND_URL}/?pay=unavailable")
+
+        # The account first, then whatever address this checkout was last
+        # minted against - an order raised for a walk-in has no account, and
+        # their link has to keep working too. Never anything from the request:
+        # whoever opens the link does not get to choose where a receipt lands.
+        account = payment.order.customer
+        email = (account.email if account else "") or payment.checkout_email
+
+        ok, detail = dispatch_payment(payment, email=email or None)
+
+        if not ok:
+            return redirect(f"{settings.FRONTEND_URL}/?pay=unavailable")
+
+        return redirect(detail)

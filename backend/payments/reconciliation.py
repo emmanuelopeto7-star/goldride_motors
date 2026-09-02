@@ -1,9 +1,9 @@
 from datetime import timedelta
 
-from django.db import transaction
 from django.utils import timezone
 
-from .models import Payment
+from .audit import settle
+from .models import Payment, PaymentEvent
 from .mpesa import query_mpesa_payment
 from .services import verify_paystack_payment
 
@@ -85,21 +85,12 @@ def _reconcile_mpesa(payment):
 
 
 def _mark(payment, status, provider_ref=None, note=None):
-    with transaction.atomic():
-        locked = (
-            Payment.objects.select_for_update()
-            .filter(pk=payment.pk, status="pending")
-            .first()
-        )
-        if locked is None:
-            return False, "already resolved"
-
-        locked.status = status
-        if provider_ref:
-            locked.provider_ref = provider_ref
-        if note:
-            locked.note = note
-        locked.save()
-
-    payment.refresh_from_db()
-    return True, status
+    """The sweep's one way to write. See payments/audit.settle."""
+    return settle(
+        payment,
+        to_status=status,
+        source=PaymentEvent.RECONCILE,
+        detail=note or f"provider reported {status}",
+        provider_ref=provider_ref,
+        note=note,
+    )

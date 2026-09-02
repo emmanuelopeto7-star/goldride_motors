@@ -23,7 +23,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core import mail
 from django.core.cache import cache
-from django.test import override_settings
+from django.test import TestCase as DjangoTestCase, override_settings
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -32,6 +32,7 @@ from cars.models import Car
 from imports.models import ImportOrder
 
 from .models import Payment
+from .mpesa import start_mpesa_payment, whole_shillings
 from .notifications import send_payment_instructions
 from .reconciliation import ABANDONED_GRACE, reconcile_payment
 from .services import verify_paystack_signature
@@ -684,7 +685,7 @@ class CheckoutNotificationTests(APITestCase):
         self.assertTrue(sent)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["buyer@example.com"])
-        self.assertIn("https://checkout.paystack.com/abc123", mail.outbox[0].body)
+        self.assertIn(f"/pay/{payment.reference}/", mail.outbox[0].body)
 
     def test_an_mpesa_payment_points_at_the_phone_prompt(self):
         """There is no link to send - the STK push is the delivery."""
@@ -708,15 +709,18 @@ class CheckoutNotificationTests(APITestCase):
         self.assertIn("bank transfer", body)
         self.assertIn("amount too large", body)
 
-    def test_a_card_payment_with_no_link_yet_sends_nothing(self):
-        """Dispatch failed - mailing "pay here" with no here is worse than silence."""
+    def test_a_card_payment_is_worth_mailing_before_any_checkout_exists(self):
+        """This used to be refused, and was right to be: the email carried a
+        Paystack session, and mailing "pay here" with no here was worse than
+        silence. The link is ours now and mints a session when opened, so
+        there is something to send even when dispatch never ran."""
         payment = a_payment(method="card")
         mail.outbox.clear()
 
         sent = send_payment_instructions(payment, "buyer@example.com")
 
-        self.assertFalse(sent)
-        self.assertEqual(len(mail.outbox), 0)
+        self.assertTrue(sent)
+        self.assertIn(f"/pay/{payment.reference}/", mail.outbox[0].body)
 
     def test_no_address_means_no_send(self):
         payment = a_payment(method="mpesa")
@@ -738,9 +742,13 @@ class CheckoutNotificationTests(APITestCase):
         self.assertIsNotNone(payment.checkout_sent_at)
 
     def test_nothing_is_stamped_when_nothing_was_sent(self):
-        payment = a_payment(method="card")
+        """A manual payment with no note has nothing useful to say, so no
+        email goes and the stamp stays clear - that is still the difference
+        between "waiting on them" and "waiting on us"."""
+        payment = a_payment(method="manual")
 
-        send_payment_instructions(payment, "buyer@example.com")
+        with patch("payments.notifications._how_to_pay", return_value=None):
+            send_payment_instructions(payment, "buyer@example.com")
 
         payment.refresh_from_db()
         self.assertIsNone(payment.checkout_sent_at)
@@ -771,3 +779,273 @@ class CheckoutNotificationTests(APITestCase):
 
         self.assertIn("2020 Toyota Prado", mail.outbox[0].subject)
         self.assertLess(len(mail.outbox[0].subject), 80)
+
+
+class RaisingAPaymentTests(APITestCase):
+    """Staff putting a figure in front of a customer by hand.
+
+    Most invoices are raised for us when a purchase is approved. This is the
+    rest of the business - a balance, a second instalment, an order that was
+    never a purchase request - and it is the one path where the amount is
+    typed by a person, so it is the one that needs guarding.
+    """
+
+    URL = "/api/staff/payments/"
+
+    def setUp(self):
+        cache.clear()
+        User = get_user_model()
+        self.order = an_order(total_amount=Decimal("900000.00"))
+
+        self.manager = User.objects.create_user("boss", "boss@example.com", "pw")
+        Group.objects.get_or_create(name="Manager")[0].user_set.add(self.manager)
+        self.sales = User.objects.create_user("rep", "rep@example.com", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(self.sales)
+
+        self.as_manager()
+
+    def as_manager(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.manager).key}"
+        )
+
+    def as_sales(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.sales).key}"
+        )
+
+    def raise_payment(self, **overrides):
+        body = {
+            "order": self.order.id,
+            "amount": "300000.00",
+            "method": "mpesa",
+        }
+        body.update(overrides)
+        return self.client.post(self.URL, body, format="json")
+
+    def test_a_manager_can_raise_one(self):
+        response = self.raise_payment(note="Deposit agreed on the phone")
+
+        self.assertEqual(response.status_code, 201)
+        payment = Payment.objects.get(reference=response.data["reference"])
+        self.assertEqual(payment.order, self.order)
+        self.assertEqual(payment.amount, Decimal("300000.00"))
+        self.assertEqual(payment.note, "Deposit agreed on the phone")
+
+    def test_it_starts_pending_and_nobody_has_been_asked_yet(self):
+        """Raising is not collecting. Dispatch is a separate, deliberate step."""
+        response = self.raise_payment()
+
+        payment = Payment.objects.get(reference=response.data["reference"])
+        self.assertEqual(payment.status, "pending")
+        self.assertIsNone(payment.checkout_sent_at)
+        self.assertEqual(payment.checkout_url, "")
+
+    def test_sales_can_raise_one_too(self):
+        """Collecting what a customer already agreed to owe is the job, not a
+        decision about it - and what can be asked for is bounded by a total a
+        manager set on the order."""
+        self.as_sales()
+
+        self.assertEqual(self.raise_payment().status_code, 201)
+
+    def test_a_customer_cannot_raise_one_on_their_own_order(self):
+        """The obvious way to turn an invoice into a discount."""
+        User = get_user_model()
+        buyer = User.objects.create_user("buyer", "buyer@example.com", "pw")
+        Group.objects.get_or_create(name="Customer")[0].user_set.add(buyer)
+        self.order.customer = buyer
+        self.order.save(update_fields=["customer"])
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=buyer).key}"
+        )
+
+        self.assertEqual(self.raise_payment(amount="1.00").status_code, 403)
+        self.assertFalse(Payment.objects.exists())
+
+    def test_a_payment_cannot_be_marked_paid_by_hand(self):
+        """Whether money arrived is the provider's answer, not ours. A hand-set
+        `paid` would be a figure in the ledger no money ever matched."""
+        response = self.raise_payment(status="paid")
+
+        self.assertEqual(response.status_code, 201)
+        payment = Payment.objects.get(reference=response.data["reference"])
+        self.assertEqual(payment.status, "pending")
+
+    def test_nothing_is_owed_on_a_cancelled_order(self):
+        self.order.cancel(reason="changed their mind")
+
+        response = self.raise_payment()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Payment.objects.exists())
+
+    def test_zero_is_not_an_invoice(self):
+        self.assertEqual(self.raise_payment(amount="0").status_code, 400)
+        self.assertEqual(self.raise_payment(amount="-5000").status_code, 400)
+        self.assertFalse(Payment.objects.exists())
+
+    def test_it_refuses_more_than_is_outstanding(self):
+        """A typed amount is a mistyped amount. 9,000,000 for 900,000 should
+        not reach a customer's phone."""
+        response = self.raise_payment(amount="9000000.00")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Payment.objects.exists())
+
+    def test_the_outstanding_figure_counts_what_has_been_paid(self):
+        a_payment(order=self.order, amount=Decimal("800000.00"), status="paid")
+
+        self.assertEqual(self.raise_payment(amount="100000.00").status_code, 201)
+        self.assertEqual(self.raise_payment(amount="100000.01").status_code, 400)
+
+    def test_an_order_with_no_agreed_total_is_left_to_the_person_typing(self):
+        """A total of 0 means nothing was agreed, not that nothing is owed."""
+        loose = an_order(total_amount=Decimal("0.00"))
+
+        response = self.raise_payment(order=loose.id, amount="450000.00")
+
+        self.assertEqual(response.status_code, 201)
+
+
+class RecordingABankTransferTests(APITestCase):
+    """The one payment nobody can be asked about.
+
+    A card payment is believed after re-querying Paystack and an M-PESA one
+    after re-querying Safaricom. A transfer into the bank account has no
+    callback and no API - somebody reads a statement and says so. Until this
+    endpoint the only way to close one was the Django admin, so a bank
+    transfer raised in the dashboard had nowhere to end.
+    """
+
+    def setUp(self):
+        cache.clear()
+        User = get_user_model()
+        self.order = an_order(total_amount=Decimal("900000.00"))
+        self.payment = a_payment(
+            order=self.order, amount=Decimal("900000.00"), method="manual"
+        )
+
+        self.manager = User.objects.create_user("boss", "boss@example.com", "pw")
+        Group.objects.get_or_create(name="Manager")[0].user_set.add(self.manager)
+        self.sales = User.objects.create_user("rep", "rep@example.com", "pw")
+        Group.objects.get_or_create(name="Sales")[0].user_set.add(self.sales)
+        self.as_manager()
+
+    def url(self, payment=None):
+        return f"/api/staff/payments/{(payment or self.payment).reference}/record/"
+
+    def as_manager(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.manager).key}"
+        )
+
+    def as_sales(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.sales).key}"
+        )
+
+    def record(self, payment=None, **body):
+        payload = {"provider_ref": "FT24081200123456"}
+        payload.update(body)
+        return self.client.post(self.url(payment), payload, format="json")
+
+    def test_a_manager_can_record_it(self):
+        response = self.record()
+
+        self.assertEqual(response.status_code, 200)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, "paid")
+        self.assertEqual(self.payment.provider_ref, "FT24081200123456")
+
+    def test_it_names_who_said_so(self):
+        """No provider stands behind this one, so the person does."""
+        self.record()
+
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.recorded_by, self.manager)
+        self.assertIsNotNone(self.payment.recorded_at)
+
+    def test_the_order_balance_moves(self):
+        self.record()
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.amount_paid, Decimal("900000.00"))
+        self.assertTrue(self.order.is_settled)
+
+    def test_the_bank_reference_is_required(self):
+        """Without it there is nothing to check the statement against."""
+        response = self.record(provider_ref="  ")
+
+        self.assertEqual(response.status_code, 400)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, "pending")
+
+    def test_a_card_payment_cannot_be_marked_paid_by_hand(self):
+        """This is the whole re-query-before-believing design. A hand-set card
+        payment is a figure in the ledger no money ever matched."""
+        card = a_payment(order=an_order(), method="card")
+
+        response = self.record(card)
+
+        self.assertEqual(response.status_code, 400)
+        card.refresh_from_db()
+        self.assertEqual(card.status, "pending")
+
+    def test_an_mpesa_payment_cannot_either(self):
+        mpesa = a_payment(order=an_order(), method="mpesa")
+
+        self.assertEqual(self.record(mpesa).status_code, 400)
+
+    def test_it_cannot_be_recorded_twice(self):
+        """Two managers reading the same statement. The second must not
+        overwrite the first one's name on the record."""
+        self.assertEqual(self.record().status_code, 200)
+
+        again = self.record(provider_ref="FT-SOMETHING-ELSE")
+
+        self.assertEqual(again.status_code, 400)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.provider_ref, "FT24081200123456")
+
+    def test_sales_cannot_record_one(self):
+        """Raising and chasing ask for money an agreed total says is owed.
+        This asserts money arrived, with nothing behind it but the person."""
+        self.as_sales()
+
+        self.assertEqual(self.record().status_code, 403)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, "pending")
+
+    def test_a_note_can_be_left_on_it(self):
+        self.record(note="Equity, cleared 12 Aug")
+
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.note, "Equity, cleared 12 Aug")
+
+
+class MpesaAmountTests(DjangoTestCase):
+    """M-PESA moves whole shillings, and the rounding has to be the safe way.
+
+    The callback never compares amounts - it re-queries the status and
+    believes that - so an under-asked push is marked paid in full and the
+    shortfall is invisible.
+    """
+
+    def test_a_whole_amount_is_unchanged(self):
+        self.assertEqual(whole_shillings(Decimal("5000.00")), 5000)
+
+    def test_a_fraction_rounds_up_rather_than_away(self):
+        """int() truncated: 5,000.75 asked for 5,000 and settled the invoice."""
+        self.assertEqual(whole_shillings(Decimal("5000.75")), 5001)
+        self.assertEqual(whole_shillings(Decimal("5000.01")), 5001)
+
+    def test_the_push_sends_the_rounded_figure(self):
+        payment = a_payment(amount=Decimal("5000.75"), method="mpesa")
+
+        with patch("payments.mpesa.get_mpesa_token", return_value="tok"), \
+                patch("payments.mpesa.requests.post") as post:
+            post.return_value.json.return_value = {"ResponseCode": "0"}
+            start_mpesa_payment(payment, "254712345678")
+
+        self.assertEqual(post.call_args.kwargs["json"]["Amount"], 5001)
