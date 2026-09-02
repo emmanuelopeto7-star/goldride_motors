@@ -151,7 +151,27 @@ class StaffOrderSerializer(serializers.ModelSerializer):
 
 
 class StaffPaymentSerializer(serializers.ModelSerializer):
+    """An invoice, raised by staff.
+
+    Most payments are created for us - approving a purchase raises one and
+    dispatches it in the same breath. This is the other half: a balance, a
+    second instalment, a deposit agreed on the phone, an order that was never
+    a purchase request at all. The row is what everything else hangs off, so
+    without a way to raise one by hand there are amounts owed that the app
+    cannot represent, let alone collect.
+
+    `status` is deliberately not writable. What a payment is worth is ours to
+    say; whether it has been paid is the provider's, arrived at through the
+    webhook or reconciliation. A hand-set `paid` would be a number in the
+    ledger that no money ever matched.
+    """
+
     order_display = serializers.StringRelatedField(source="order", read_only=True)
+    # Who said the money arrived, on the one kind of payment where no provider
+    # can be asked. Blank for everything the rails confirmed themselves.
+    recorded_by_name = serializers.CharField(
+        source="recorded_by.username", read_only=True, default=None
+    )
 
     class Meta:
         model = Payment
@@ -166,17 +186,51 @@ class StaffPaymentSerializer(serializers.ModelSerializer):
             "checkout_url",
             "checkout_sent_at",
             "note",
+            "recorded_by_name",
+            "recorded_at",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "reference",
+            "status",
             "provider_ref",
             "checkout_url",
             "checkout_sent_at",
+            "recorded_at",
             "created_at",
             "updated_at",
         ]
+
+    def validate_amount(self, amount):
+        if amount is None or amount <= 0:
+            raise serializers.ValidationError(
+                "An amount to collect has to be more than nothing."
+            )
+        return amount
+
+    def validate(self, attrs):
+        order = attrs.get("order") or getattr(self.instance, "order", None)
+        amount = attrs.get("amount")
+        if order is None or amount is None:
+            return attrs
+
+        if order.is_cancelled:
+            raise serializers.ValidationError(
+                "That order is cancelled. Win it back first, then ask for the money."
+            )
+
+        # Only when a total was agreed. An order raised without one has no
+        # balance to measure against, and refusing every payment on it would
+        # be worse than trusting the person typing.
+        if order.total_amount > 0 and amount > order.balance:
+            raise serializers.ValidationError(
+                f"That is more than is outstanding on the order "
+                f"({order.balance:,.0f} KES). Change the order total first if "
+                f"the price has moved."
+            )
+
+        return attrs
 
 
 class StaffSourcedUnitSerializer(serializers.ModelSerializer):

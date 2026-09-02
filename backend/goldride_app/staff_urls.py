@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .overview_views import StaffOverviewView
 from .team_views import StaffTeamDetailView, StaffTeamListView
 from .staff_views import (
     StaffHeroBannerDetailView,
@@ -20,13 +21,19 @@ from .staff_views import (
     StaffPaymentListView,
     StaffPushToStockView,
     StaffReactivateOrderView,
+    StaffRecordPaymentView,
+    StaffCorrectPaymentView,
+    StaffPaymentHistoryView,
     StaffReconcileAllView,
+    StaffReconciliationRunsView,
     StaffReconcileOneView,
     StaffSourcedUnitDetailView,
     StaffSourcedUnitListView,
 )
 
 urlpatterns = [
+    path("overview/", StaffOverviewView.as_view()),
+
     path("cars/", StaffCarListView.as_view()),
     path("cars/<int:pk>/", StaffCarDetailView.as_view()),
     path("cars/<int:pk>/extend/", StaffCarExtendView.as_view()),
@@ -57,6 +64,10 @@ urlpatterns = [
 
     path("payments/", StaffPaymentListView.as_view()),
     path("payments/<uuid:reference>/dispatch/", StaffPaymentDispatchView.as_view()),
+    path("payments/<uuid:reference>/record/", StaffRecordPaymentView.as_view()),
     path("payments/<uuid:reference>/reconcile/", StaffReconcileOneView.as_view()),
     path("payments/reconcile/", StaffReconcileAllView.as_view()),
+    path("payments/reconciliation-runs/", StaffReconciliationRunsView.as_view()),
+    path("payments/<uuid:reference>/history/", StaffPaymentHistoryView.as_view()),
+    path("payments/<uuid:reference>/correct/", StaffCorrectPaymentView.as_view()),
 ]

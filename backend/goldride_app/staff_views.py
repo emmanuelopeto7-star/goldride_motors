@@ -3,7 +3,9 @@ from decimal import Decimal
 from django.conf import settings
 
 from drf_spectacular.utils import extend_schema, inline_serializer
+from django.db import transaction
 from django.db.models import ProtectedError
+from django.utils import timezone
 from rest_framework import filters, generics, serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -21,9 +23,18 @@ from imports.models import (
 )
 from imports.services import notify_units_sourced, send_reengagement
 from payments.dispatch import dispatch_payment
-from payments.notifications import send_payment_instructions
-from payments.serializers import CheckoutResponseSerializer, DispatchRequestSerializer
-from payments.models import Payment
+from payments.notifications import announce_payment_raised, send_payment_instructions
+from payments.pay_link import pay_link
+from payments.serializers import (
+    CheckoutResponseSerializer,
+    CorrectionSerializer,
+    DispatchRequestSerializer,
+    PaymentEventSerializer,
+    ReconciliationRunSerializer,
+)
+from payments.audit import settle
+from payments.models import Payment, PaymentEvent, ReconciliationRun
+from payments.sweeper import sweep
 from payments.reconciliation import reconcile_payment, reconcile_pending
 
 from .permissions import IsManager, IsSales
@@ -248,24 +259,50 @@ class StaffMilestoneView(generics.ListCreateAPIView):
 # --- payments --------------------------------------------------------------
 
 class StaffPaymentListView(generics.ListCreateAPIView):
-    queryset = Payment.objects.all().order_by("-created_at")
+    """Read the ledger; raise a new invoice on an order.
+
+    Sales, not a manager. Collecting what a customer already agreed to owe is
+    the job, not a decision about it - the decisions stay reserved: approving
+    a purchase, setting the rates every quote is worked out on, and deleting
+    anything. What can be raised here is bounded by the order's outstanding
+    balance, which a manager set.
+
+    Raising one tells the customer in the chat thread about the car. Dispatch
+    stays a separate endpoint - that is what mails the instructions and pushes
+    an M-PESA prompt - so the customer hears about the invoice the moment it
+    exists rather than whenever somebody remembers.
+    """
+
+    permission_classes = [IsSales]
+    # order_display renders str(order) on every row.
+    queryset = Payment.objects.select_related("order").order_by("-created_at")
     serializer_class = StaffPaymentSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["status", "method", "order"]
 
-    def get_permissions(self):
-        if self.request.method == "POST":
-            return [IsManager()]
-        return [IsSales()]
+    def perform_create(self, serializer):
+        payment = serializer.save()
+        # Stamps checkout_sent_at when it lands, and the response carries it -
+        # which is how the dashboard knows whether to say the customer has
+        # been told or that this order has no thread to tell them in.
+        announce_payment_raised(payment)
 
 
 class StaffPaymentDispatchView(APIView):
-    permission_classes = [IsManager]
+    """Ask the customer for a pending payment, again if need be.
+
+    Sales, alongside raising it. Chasing a payment is the work; a rep who can
+    see an unpaid invoice and not send the link is a rep who has to find a
+    manager to do the obvious thing. The amount is not theirs to choose - it
+    was fixed when the invoice was raised - and the money never touches us.
+    """
+
+    permission_classes = [IsSales]
 
     @extend_schema(
         request=DispatchRequestSerializer,
         responses={200: CheckoutResponseSerializer},
-        description="Manager only. Send a checkout link or an M-PESA prompt for a pending payment.",
+        description="Send a checkout link or an M-PESA prompt for a pending payment.",
     )
     def post(self, request, reference):
         try:
@@ -288,11 +325,209 @@ class StaffPaymentDispatchView(APIView):
         emailed = send_payment_instructions(payment, email)
 
         if payment.method == "card":
-            return Response({"checkout_url": detail, "emailed": emailed})
+            # Both: the checkout is what to open right now, the pay link is
+            # what to pass on. A Paystack session pasted into a chat is stale
+            # by the time somebody reads it.
+            return Response({
+                "checkout_url": detail,
+                "pay_url": pay_link(payment),
+                "emailed": emailed,
+            })
         return Response({
             "detail": f"M-PESA prompt sent to {phone}",
             "emailed": emailed,
         })
+
+
+class StaffRecordPaymentView(APIView):
+    """Mark a bank transfer received.
+
+    The one payment we cannot ask anybody about. A card payment is believed
+    only after re-querying Paystack and an M-PESA one after re-querying
+    Safaricom; a transfer into the bank account has no callback, no reference
+    of ours, and no API - somebody reads a statement and says so. Until now
+    that could only be done in the Django admin, which meant an invoice raised
+    for a bank transfer had nowhere to end.
+
+    Manager only, and deliberately narrower than raising or chasing. Those
+    ask a customer for money that an agreed order total already says they owe.
+    This asserts that money arrived, with nothing behind the assertion but the
+    person making it - so it names them in `recorded_by`, and it refuses any
+    method a provider could have confirmed instead. Marking a card payment
+    paid by hand would defeat the entire re-query-before-believing design.
+    """
+
+    permission_classes = [IsManager]
+
+    @extend_schema(
+        request=inline_serializer('RecordPayment', {
+            'provider_ref': serializers.CharField(),
+            'note': serializers.CharField(required=False, allow_blank=True),
+        }),
+        responses={200: StaffPaymentSerializer},
+        description="Manager only. Record a pending bank transfer as received, "
+                    "against the reference it arrived under.",
+    )
+    def post(self, request, reference):
+        bank_ref = (request.data.get("provider_ref") or "").strip()
+        if not bank_ref:
+            return Response(
+                {"error": "the bank reference it arrived under is required"},
+                status=400,
+            )
+
+        # Locked and re-read inside the transaction: two managers looking at
+        # the same statement would otherwise both record it, and the second
+        # write would silently overwrite the first one's name.
+        with transaction.atomic():
+            payment = (
+                Payment.objects.select_for_update()
+                .filter(reference=reference)
+                .first()
+            )
+            if payment is None:
+                return Response({"error": "no payment with that reference"}, status=404)
+
+            if payment.method != "manual":
+                return Response(
+                    {"error": "only a bank transfer is recorded by hand - ask the "
+                              "provider about this one instead"},
+                    status=400,
+                )
+
+            if payment.status != "pending":
+                return Response(
+                    {"error": f"this payment is already {payment.status}"},
+                    status=400,
+                )
+
+            payment.provider_ref = bank_ref[:100]
+            payment.recorded_by = request.user
+            payment.recorded_at = timezone.now()
+            note = (request.data.get("note") or "").strip()
+            if note:
+                payment.note = note[:200]
+            payment.save(update_fields=[
+                "provider_ref", "recorded_by", "recorded_at",
+                "note", "updated_at",
+            ])
+
+        # Outside the block above, because settle() takes the lock itself and
+        # is the only thing allowed to write a status. It records who said so,
+        # which for a bank transfer is the only evidence there is.
+        settle(
+            payment,
+            to_status="paid",
+            source=PaymentEvent.RECORDED,
+            actor=request.user,
+            detail=f"bank reference {bank_ref}" if bank_ref else "recorded by hand",
+        )
+
+        payment.refresh_from_db()
+        return Response(StaffPaymentSerializer(payment).data)
+
+
+class StaffCorrectPaymentView(APIView):
+    """Put a payment right when the rails got it wrong.
+
+    A manager's, not sales': this is the one endpoint that overrules what a
+    provider said, and it can move a payment out of any state - that is what
+    makes it a correction rather than a settlement.
+
+    Nothing is overwritten. The status changes and a PaymentEvent records what
+    it was, what it became, who did it and why - so a payment that reads `paid`
+    because somebody here said so is distinguishable forever from one Paystack
+    confirmed.
+    """
+
+    permission_classes = [IsManager]
+
+    @extend_schema(
+        request=CorrectionSerializer,
+        responses={200: StaffPaymentSerializer},
+        description="Correct a payment's status by hand. Requires a reason, "
+                    "which is kept in the payment's history.",
+    )
+    def post(self, request, reference):
+        payment = Payment.objects.filter(reference=reference).first()
+        if payment is None:
+            return Response({"error": "not found"}, status=404)
+
+        form = CorrectionSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+
+        changed, message = settle(
+            payment,
+            to_status=form.validated_data["status"],
+            source=PaymentEvent.CORRECTION,
+            # None: a correction is allowed to move a payment out of whatever
+            # state it is in, including one a provider set.
+            expected_status=None,
+            actor=request.user,
+            detail=form.validated_data["reason"],
+        )
+        if not changed:
+            return Response({"error": message}, status=409)
+
+        payment.refresh_from_db()
+        return Response(StaffPaymentSerializer(payment).data)
+
+
+class StaffPaymentHistoryView(APIView):
+    """Everything that has ever happened to one payment.
+
+    Readable by sales as well as managers: an agent fielding "I paid on
+    Tuesday" needs the history to answer it, and only the correcting is a
+    manager's job.
+    """
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        responses={200: PaymentEventSerializer(many=True)},
+        description="The audit trail for one payment.",
+    )
+    def get(self, request, reference):
+        payment = (
+            Payment.objects.filter(reference=reference)
+            .prefetch_related("events__actor")
+            .first()
+        )
+        if payment is None:
+            return Response({"error": "not found"}, status=404)
+
+        return Response(
+            {
+                "reference": str(payment.reference),
+                "status": payment.status,
+                "events": PaymentEventSerializer(
+                    payment.events.all(), many=True
+                ).data,
+            }
+        )
+
+
+class StaffReconciliationRunsView(APIView):
+    """Whether the sweep is alive, and what the last ones did.
+
+    "Last checked 6 minutes ago" is the difference between trusting the
+    payments screen and quietly not.
+    """
+
+    permission_classes = [IsSales]
+
+    @extend_schema(
+        responses={200: ReconciliationRunSerializer(many=True)},
+        description="Recent reconciliation sweeps, newest first.",
+    )
+    def get(self, request):
+        runs = ReconciliationRun.objects.all()[:20]
+        return Response(
+            {
+                "interval_minutes": settings.RECONCILE_INTERVAL_MINUTES,
+                "runs": ReconciliationRunSerializer(runs, many=True).data,
+            }
+        )
 
 
 class StaffReconcileAllView(APIView):
@@ -313,14 +548,16 @@ class StaffReconcileAllView(APIView):
                     "With a reference, checks one; without, checks all.",
     )
     def post(self, request):
-        results = reconcile_pending()
+        # Through the sweeper rather than reconcile_pending directly, so a
+        # button press is recorded and locked exactly like the timed sweep -
+        # otherwise a member of staff clicking during an automatic run would
+        # have both asking Paystack about the same payments at once.
+        run = sweep(trigger=ReconciliationRun.STAFF, stale_minutes=0)
         return Response({
-            "checked": len(results),
-            "updated": sum(1 for _, changed, _ in results if changed),
-            "results": [
-                {"reference": str(p.reference), "changed": c, "detail": m, "status": p.status}
-                for p, c, m in results
-            ],
+            "checked": run.checked,
+            "updated": run.updated,
+            "state": run.state,
+            "detail": run.error or "",
         })
 
 
