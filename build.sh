@@ -19,3 +19,17 @@ cd backend
 python manage.py collectstatic --no-input
 
 python manage.py migrate
+
+# Roles, every time. `get_or_create`, so re-running changes nothing - and the
+# permission classes check group membership, meaning without these even a
+# superuser cannot open the staff screens.
+python manage.py setup_roles
+
+# The first admin. This lives here because Render's free plan has no shell, so
+# there is otherwise no way to create one at all. It runs only when the
+# credentials are supplied, and `|| true` covers the case where the account
+# already exists - createsuperuser exits non-zero then, and errexit would fail
+# an otherwise healthy deploy.
+if [ -n "$DJANGO_SUPERUSER_USERNAME" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
+  python manage.py createsuperuser --noinput || true
+fi
