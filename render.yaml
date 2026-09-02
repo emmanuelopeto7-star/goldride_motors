@@ -27,13 +27,13 @@ services:
       - key: PYTHON_VERSION
         value: "3.12"
 
-      # Render exports its own hostname under this name; the app reads it as a
-      # generic one and merges it into ALLOWED_HOSTS.
+      # Named outright rather than read back from this same service. A
+      # `fromService` block pointing at the service that declares it does not
+      # resolve, so PUBLIC_HOSTNAME arrived empty, ALLOWED_HOSTS was empty with
+      # it, and Django answered its own hostname with DisallowedHost - a fully
+      # built, running service returning 400 to every request.
       - key: PUBLIC_HOSTNAME
-        fromService:
-          type: web
-          name: goldride-backend
-          property: host
+        value: goldride-backend.onrender.com
 
       - key: SECRET_KEY
         generateValue: true
