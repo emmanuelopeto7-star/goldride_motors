@@ -1,0 +1,20 @@
+# Vercel builds the frontend and nothing else. The backend is on Render.
+#
+# Belt and braces beside vercel.json's "framework": null. Vercel inspects the
+# repository to guess what it is holding, and a requirements.txt next to a
+# manage.py makes it guess Django. It then imports the settings module, which
+# fails on the first line that reads a secret - so the error names SECRET_KEY
+# and reads like a missing environment variable, when what actually happened
+# is that the wrong project was built.
+backend/
+requirements.txt
+build.sh
+DEPLOY.md
+render.yaml
+
+# Never uploaded anywhere, but especially not here.
+venv/
+*.sqlite3
+.env
+.env.*
+*.log
