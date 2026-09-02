@@ -1,0 +1,12 @@
+{
+  "name": "goldride-motors",
+  "private": true,
+  "description": "Container for the two projects. The frontend lives in frontend/, the Django app in backend/ - nothing runs from here, so these scripts delegate rather than leaving `npm run dev` to fail with an ENOENT about a package.json this directory will never have.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend run test",
+    "lint": "npm --prefix frontend run lint",
+    "backend": "cd backend && venv\\Scripts\\python.exe manage.py runserver 8000"
+  }
+}

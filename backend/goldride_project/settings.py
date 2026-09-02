@@ -40,21 +40,12 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 allowed_hosts_str = config('ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(',') if host.strip()]
 
-# Render injects the service's public hostname. Reading it means the app works
-# on whatever URL Render hands out without that URL being hardcoded here.
-RENDER_HOST = config('RENDER_EXTERNAL_HOSTNAME', default='')
-if RENDER_HOST and RENDER_HOST not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(RENDER_HOST)
-elif config('RENDER', default=False, cast=bool):
-    # Belt and braces. On 2026-08-19 the live service answered its own URL with
-    # 400 DisallowedHost and ALLOWED_HOSTS holding nothing but localhost, so
-    # RENDER_EXTERNAL_HOSTNAME plainly did not arrive - it is documented but not
-    # guaranteed. RENDER itself is set on every instance, so when we know we are
-    # on Render and nobody has named the host, trust the platform's own domain.
-    # Render routes by hostname, so the only Host headers that reach this service
-    # are its own; the leading dot matches subdomains and keeps the site up
-    # rather than down while the real hostname is missing.
-    ALLOWED_HOSTS.append('.onrender.com')
+# Some hosts inject the service's public hostname rather than letting you name
+# it. `PUBLIC_HOSTNAME` is that hook, kept platform-neutral: set it to whatever
+# the host exports and the app answers on a URL nobody had to hardcode.
+PUBLIC_HOSTNAME = config('PUBLIC_HOSTNAME', default='')
+if PUBLIC_HOSTNAME and PUBLIC_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(PUBLIC_HOSTNAME)
 
 # Django 4+ rejects cross-origin POSTs - including the admin login - unless the
 # origin is listed here, scheme included.
@@ -67,9 +58,13 @@ CSRF_TRUSTED_ORIGINS = [
     if host not in ("localhost", "127.0.0.1", "*")
 ]
 
-# Render terminates TLS at its proxy and forwards plain HTTP, so without this
-# Django believes every request is insecure: request.is_secure() returns False,
-# secure cookies are never set, and SSL redirects loop.
+# Nearly every managed host terminates TLS at a proxy and forwards plain HTTP.
+# Without this Django believes every request is insecure: request.is_secure()
+# returns False, secure cookies are never set, and SSL redirects loop.
+#
+# It trusts the X-Forwarded-Proto header, so the app must sit behind a proxy
+# that sets it. Exposed directly to the internet, a client could send the
+# header itself and be believed.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
@@ -148,6 +143,10 @@ CORS_ALLOW_CREDENTIALS = True
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Directly after SecurityMiddleware, as WhiteNoise requires. Without it
+    # nothing serves the admin's own CSS once DEBUG is off: Django stops
+    # serving static files itself, and there is no nginx in front of this.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -387,7 +386,7 @@ PUSH_TO_STOCK_MARKUP_PERCENT = config(
 )
 
 # Mail failures are logged rather than raised, so they need somewhere to land.
-# Console handler because Render captures stdout - a file would be written to
+# Console handler because a managed host captures stdout - a file would be written to
 # an ephemeral disk and lost on the next deploy.
 LOGGING = {
     'version': 1,
@@ -430,5 +429,21 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Where collectstatic gathers everything for WhiteNoise to serve.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        # Hashed filenames plus a manifest, so a deploy cannot serve last
+        # release's stylesheet out of somebody's cache. The manifest is also
+        # why collectstatic has to run in the build: a missing file then fails
+        # at deploy time rather than in front of a customer.
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
