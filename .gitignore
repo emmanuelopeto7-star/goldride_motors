@@ -34,3 +34,6 @@ mpesa_test.py
 mpesa_demo.py
 mpesademo.py
 auth_test.py
+
+# Security audit report - findings about a live site, kept out of the repo
+SECURITY_AUDIT.md
