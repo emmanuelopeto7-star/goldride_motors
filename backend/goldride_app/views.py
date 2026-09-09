@@ -12,9 +12,13 @@ from django.contrib.auth import authenticate, get_user_model
 from django.shortcuts import redirect
 
 from .models import get_profile
+from .passwords import send_reset_email, set_password
 from .serializers import (
     EmailLoginSerializer,
     MeUpdateSerializer,
+    PasswordChangeSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     RegisterSerializer,
     SocialLoginSerializer,
 )
@@ -286,3 +290,107 @@ class MeView(APIView):
                 user.social_accounts.values_list("provider", flat=True)
             ),
         }
+
+
+class PasswordResetRequestView(APIView):
+    """Ask for a reset link.
+
+    Always answers the same way. Whether an address has an account here is
+    exactly the fact an attacker wants from this endpoint - a different answer
+    for a hit and a miss turns it into a free membership oracle, and this site
+    holds enough about its customers that membership alone is worth having.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    ANSWER = {
+        "detail": "If that address has an account, a reset link is on its way."
+    }
+
+    @extend_schema(
+        request=PasswordResetRequestSerializer,
+        responses={200: inline_serializer(
+            'PasswordResetRequested', {'detail': serializers.CharField()}
+        )},
+        description="Request a password reset link. The response is identical "
+                    "whether or not the address has an account.",
+    )
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = User.objects.filter(
+            email__iexact=serializer.validated_data["email"], is_active=True
+        ).first()
+
+        if user is not None:
+            # Social-only accounts have an unusable password. Sending a link
+            # would work, and would quietly bolt a password onto an account
+            # whose owner only ever proved themselves to Google - so it is
+            # refused, silently, like every other miss here.
+            if user.has_usable_password():
+                send_reset_email(user)
+
+        return Response(self.ANSWER)
+
+
+class PasswordResetConfirmView(APIView):
+    """Spend a reset link and set the new password."""
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    @extend_schema(
+        request=PasswordResetConfirmSerializer,
+        responses={200: inline_serializer(
+            'PasswordResetDone', {'detail': serializers.CharField()}
+        )},
+        description="Set a new password using a link from the reset email. "
+                    "The link works once; every API token on the account is "
+                    "revoked, so any other session has to sign in again.",
+    )
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        set_password(
+            serializer.validated_data["user"],
+            serializer.validated_data["password"],
+        )
+        return Response({"detail": "Your password has been changed. Please sign in."})
+
+
+class PasswordChangeView(APIView):
+    """Change the password on the account you are signed in to."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    @extend_schema(
+        request=PasswordChangeSerializer,
+        responses={200: inline_serializer(
+            'PasswordChanged', {'detail': serializers.CharField(),
+                                'token': serializers.CharField()}
+        )},
+        description="Change your own password. Requires the current one. "
+                    "Every existing API token is revoked and a fresh one is "
+                    "returned, so this session continues and others do not.",
+    )
+    def post(self, request):
+        serializer = PasswordChangeSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        set_password(user, serializer.validated_data["password"])
+
+        # set_password revoked every token including the one that authenticated
+        # this call. Handing back a fresh one keeps the caller signed in here
+        # while every other device is signed out - which is the point.
+        token = Token.objects.create(user=user)
+        return Response({"detail": "Your password has been changed.", "token": token.key})

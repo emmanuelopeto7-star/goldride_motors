@@ -16,6 +16,8 @@ import MySaved from './pages/MySaved'
 import NotFound from './pages/NotFound'
 import TrackOrder from './pages/TrackOrder'
 import DealerActivate from './pages/DealerActivate'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import DealerLayout from './pages/dealer/DealerLayout'
 import DealerListings from './pages/dealer/DealerListings'
 import ListWithUs from './pages/ListWithUs'
@@ -94,6 +96,10 @@ function App() {
         {/* Signed out by definition - the account exists but has no
             password yet, which is what this page is for. */}
         <Route path="/dealer/activate/:token" element={<DealerActivate />} />
+        {/* Both public: somebody who has forgotten their password is by
+            definition not signed in. The token in the URL is the credential. */}
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/auth/linkedin/callback" element={<LinkedInCallback />} />
         {/* Public: the UUID is the credential, so no guard here. */}
         <Route path="/track/:token" element={<TrackOrder />} />

@@ -4,6 +4,7 @@ import api from '../api/client'
 import { errorMessages } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/Button'
+import ChangePasswordForm from '../components/ChangePasswordForm'
 
 const fieldClass =
   'h-12 w-full max-w-[420px] border border-line bg-surface px-4 text-model outline-none focus:border-ink'
@@ -156,6 +157,11 @@ function MyProfile() {
             {providers.length > 0 ? providers.join(', ') : 'none'}
           </li>
         </ul>
+
+        {/* Only for an account that has a password to replace. A social-only
+            sign-in has no current password to prove, and bolting one on from
+            here would be a different feature with a different risk. */}
+        {hasPassword && <ChangePasswordForm />}
       </section>
     </div>
   )

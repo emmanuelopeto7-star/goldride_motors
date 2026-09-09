@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import api from '../api/client'
@@ -93,6 +94,21 @@ function AuthModal({ onClose }) {
           className={fieldClass}
           required
         />
+
+        {/* Only on the sign-in side: on the register form there is no
+            password to have forgotten yet. Closing the modal first, because
+            navigating underneath an open one leaves it covering the page. */}
+        {!isRegister && (
+          <p className="text-right text-meta">
+            <Link
+              to="/forgot-password"
+              onClick={onClose}
+              className="text-ink-soft underline hover:text-ink"
+            >
+              Forgotten your password?
+            </Link>
+          </p>
+        )}
 
         {auth.isError && (
           <ul className="space-y-1">
