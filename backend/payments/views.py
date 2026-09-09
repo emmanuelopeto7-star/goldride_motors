@@ -205,11 +205,6 @@ class MpesaCallbackView(APIView):
         if result is None or str(result.get("ResultCode")) != "0":
             return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
 
-        receipt = ""
-        for item in stk.get("CallbackMetadata", {}).get("Item", []):
-            if item.get("Name") == "MpesaReceiptNumber":
-                receipt = item.get("Value", "")
-
         try:
             payment = Payment.objects.get(
                 checkout_request_id=checkout_id, status="pending"
