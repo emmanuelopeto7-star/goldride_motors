@@ -10,7 +10,6 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { useScrolled } from '../hooks/useScrolled'
-import { useHeroBanner } from '../hooks/useHeroBanner'
 import { useAuth } from '../context/AuthContext'
 import { isBrowsing } from '../lib/browsing'
 import AuthModal from './AuthModal'
@@ -67,15 +66,13 @@ function Layout() {
   const { user, isSales, isDealer, signOut } = useAuth()
 
   const scrolled = useScrolled(80)
-  // Shares a cache entry with Hero, so this costs no extra request. Keyed on
-  // whether a hero will actually draw, not merely on the route - otherwise a
-  // home page with no banner leaves white header text on a white background.
-  const { data: banner, isPending: bannerPending } = useHeroBanner()
   // A filtered list lives at "/" too, but it is a result set rather than the
   // front door - so no hero, and the header is solid from the first paint.
   const browsing = isBrowsing(searchParams)
-  const hasHero =
-    location.pathname === '/' && !browsing && (bannerPending || Boolean(banner))
+  // Known outright now the hero is part of the build. It used to depend on a
+  // fetched banner, which meant the header could not know whether to draw
+  // itself white-on-photo or dark-on-white until a request came back.
+  const hasHero = location.pathname === '/' && !browsing
   const overlay = hasHero && !scrolled
 
   function handleSubmit(event) {
