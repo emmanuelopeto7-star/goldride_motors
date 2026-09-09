@@ -287,15 +287,31 @@ class SignupEmailTests(ThrottleFreeTestCase):
             "someone@mailinator.com",
             "someone@10minutemail.com",
             "someone@yopmail.com",
+            # Same services on other domains. These slipped through the
+            # hand-written list and are why the maintained one is wired in.
+            "someone@mailinator.net",
+            "someone@temp-mail.io",
+            "someone@1secmail.com",
+            "someone@emailfake.com",
         ]
         for email in cases:
             with self.subTest(email):
+                # Per iteration, not per test: this list is longer than the
+                # 10/hour register throttle, so without it the tail of the
+                # loop measures rate limiting instead of the email rule.
+                cache.clear()
                 response = self.signup(email)
                 self.assertEqual(response.status_code, 400, f"{email} was accepted")
                 self.assertIn("email", response.json())
 
     def test_accepts_a_real_address(self):
         self.assertEqual(self.signup("wanjiku@gmail.com").status_code, 201)
+
+    def test_the_maintained_list_is_actually_loaded(self):
+        """A silent ImportError here would quietly drop ~8,700 domains."""
+        from .validators import MAINTAINED_DISPOSABLE
+
+        self.assertGreater(len(MAINTAINED_DISPOSABLE), 5000)
 
     def test_case_and_padding_do_not_evade_the_rule(self):
         for email in ["Someone@Example.COM", "someone@TEST.com"]:
@@ -363,3 +379,68 @@ class DeliverabilityTests(ThrottleFreeTestCase):
 
         with patch("dns.resolver.Resolver.resolve", side_effect=dns.resolver.NXDOMAIN):
             self.assertFalse(domain_accepts_mail("nosuchdomain-xyz-9911.com"))
+
+
+@override_settings(REST_FRAMEWORK={
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_THROTTLE_RATES": {"login": "5/hour"},
+})
+class LoginThrottleTests(ThrottleFreeTestCase):
+    """Five wrong passwords an hour, on both sign-in doors.
+
+    `/api/auth/login/` was DRF's `obtain_auth_token`, which sets
+    `throttle_classes = ()` and so accepted unlimited guesses. The email door
+    next to it was already limited, which made the limit decorative - anybody
+    stopped there could move one URL across.
+    """
+
+    BY_USERNAME = "/api/auth/login/"
+    BY_EMAIL = "/api/auth/login/email/"
+
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(
+            username="wanjiku", email="wanjiku@gmail.com", password=STRONG
+        )
+
+    def guess_by_username(self):
+        return self.client.post(
+            self.BY_USERNAME, {"username": "wanjiku", "password": "wrong"},
+            format="json",
+        )
+
+    def guess_by_email(self):
+        return self.client.post(
+            self.BY_EMAIL, {"email": "wanjiku@gmail.com", "password": "wrong"},
+            format="json",
+        )
+
+    def test_the_username_door_stops_after_five(self):
+        for attempt in range(5):
+            self.assertEqual(self.guess_by_username().status_code, 400, f"attempt {attempt + 1}")
+        self.assertEqual(self.guess_by_username().status_code, 429)
+
+    def test_the_email_door_stops_after_five(self):
+        for attempt in range(5):
+            self.assertEqual(self.guess_by_email().status_code, 400, f"attempt {attempt + 1}")
+        self.assertEqual(self.guess_by_email().status_code, 429)
+
+    def test_the_two_doors_share_one_budget(self):
+        """The whole point: exhausting one must not leave the other open."""
+        for _ in range(5):
+            self.guess_by_username()
+
+        self.assertEqual(self.guess_by_email().status_code, 429)
+
+    def test_a_correct_password_still_works_within_the_limit(self):
+        self.guess_by_username()
+        response = self.client.post(
+            self.BY_USERNAME, {"username": "wanjiku", "password": STRONG},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("token"))

@@ -33,10 +33,29 @@ RESERVED_DOMAINS = frozenset({
 # The TLDs from the same RFCs. Anything under them is equally unreachable.
 RESERVED_TLDS = frozenset({"test", "example", "invalid", "localhost", "local"})
 
-# Throwaway inbox providers. Not exhaustive - no such list is - and it does not
-# need to be: this is here to stop the lazy signup, not to win an arms race
-# against somebody determined to have a disposable address. The MX check below
-# is the rule that generalises.
+# The maintained list, ~8,700 domains, updated by `pip install -U
+# disposable-email-domains`. Optional: without it the hand-written set below
+# still applies, so a host that failed to install it degrades rather than
+# breaks.
+#
+# Worth being blunt about what this can and cannot do. It is a blocklist, and
+# no blocklist is ever complete - a throwaway service can register a new domain
+# this afternoon. The MX check does not help here either: temp-mail.io and
+# 1secmail.com publish perfectly good MX records, because they are real mail
+# systems that happen to hand out disposable inboxes. The only thing that
+# actually proves an address belongs to whoever typed it is making them open a
+# link sent to it; see UserProfile.email_verified and verification.py.
+try:
+    from disposable_email_domains import blocklist as _MAINTAINED
+    MAINTAINED_DISPOSABLE = frozenset(d.lower() for d in _MAINTAINED)
+except ImportError:  # pragma: no cover - depends on the host's install
+    MAINTAINED_DISPOSABLE = frozenset()
+    logger.warning(
+        "disposable-email-domains not installed - falling back to the built-in list"
+    )
+
+# Kept alongside the package, for gaps found by hand. Everything here was
+# tested against the maintained list and was missing from it.
 DISPOSABLE_DOMAINS = frozenset({
     "mailinator.com", "guerrillamail.com", "guerrillamail.net", "sharklasers.com",
     "10minutemail.com", "10minutemail.net", "tempmail.com", "temp-mail.org",
@@ -46,6 +65,9 @@ DISPOSABLE_DOMAINS = frozenset({
     "mohmal.com", "emailondeck.com", "burnermail.io", "moakt.com",
     "tempr.email", "discard.email", "mailcatch.com", "inboxkitten.com",
     "spam4.me", "grr.la", "tempmailo.com", "minuteinbox.com",
+    # Missing from the maintained list as of 2026-09-09.
+    "temp-mail.io", "mailduck.io", "tempmail.io", "temp-mail.net",
+    "mail-temp.com", "tmpmail.org", "tmpmail.net",
 })
 
 
@@ -153,7 +175,9 @@ def validate_deliverable_email(value):
         raise ValidationError(REJECTION)
 
     if policy.reject_disposable and (
-        domain in DISPOSABLE_DOMAINS or domain in policy.extra_blocked
+        domain in MAINTAINED_DISPOSABLE
+        or domain in DISPOSABLE_DOMAINS
+        or domain in policy.extra_blocked
     ):
         raise ValidationError(REJECTION)
 

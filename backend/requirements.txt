@@ -20,3 +20,6 @@ django-cloudinary-storage==0.3.0
 # MX lookup for signup email validation (goldride_app/validators.py).
 # Optional at runtime: without it the reserved/disposable rules still apply.
 dnspython==2.8.0
+# ~8,700 known throwaway-inbox domains. Refresh with `pip install -U`.
+# Optional at runtime: validators.py falls back to its own list.
+disposable-email-domains==0.0.254
