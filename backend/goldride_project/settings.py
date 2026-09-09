@@ -233,18 +233,63 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
+        # Refuses a password that is mostly the username or email address.
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {
+        # 12, not Django's 8. Length is the only property that actually costs
+        # an attacker anything, and 8 characters is minutes on rented hardware.
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 12},
     },
     {
+        # Django ships a list of the 20,000 commonest passwords.
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
     },
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        # Three of: lower, upper, digit, symbol. Three rather than four on
+        # purpose - see the note in validators.py.
+        'NAME': 'goldride_app.validators.ComplexityValidator',
+        'OPTIONS': {'required': 3},
+    },
+    {
+        # Stops "aaaaaaaaaaaa" and "abcabcabcabc", which clear every rule above.
+        'NAME': 'goldride_app.validators.RepetitionValidator',
+        'OPTIONS': {'max_run': 4},
+    },
 ]
+
+# How long a password reset link stays good. Django's own default is 3 days,
+# which is a long time for a link that hands over an account; a reset is
+# something people do immediately or not at all.
+PASSWORD_RESET_TIMEOUT = config(
+    'PASSWORD_RESET_TIMEOUT', default=60 * 60 * 2, cast=int
+)
+
+# --- who may sign up -------------------------------------------------------
+# An address that is merely well-formed is not an address. `tung6767@test.com`
+# passes every syntax check and reaches nobody, and an account there can never
+# verify, never reset a password and never be told its car arrived.
+#
+# Three rules, applied at signup and whenever an address is changed. See
+# goldride_app/validators.py for what each one does.
+EMAIL_REJECT_RESERVED_DOMAINS = config(
+    'EMAIL_REJECT_RESERVED_DOMAINS', default=True, cast=bool
+)
+EMAIL_REJECT_DISPOSABLE_DOMAINS = config(
+    'EMAIL_REJECT_DISPOSABLE_DOMAINS', default=True, cast=bool
+)
+# The DNS check. Costs one lookup on signup and fails open when the resolver
+# is unreachable, so a DNS wobble cannot stop the world registering.
+EMAIL_REQUIRE_DELIVERABLE_DOMAIN = config(
+    'EMAIL_REQUIRE_DELIVERABLE_DOMAIN', default=True, cast=bool
+)
+EMAIL_DNS_TIMEOUT = config('EMAIL_DNS_TIMEOUT', default=5, cast=int)
+# Anything else to refuse, comma separated, without a deploy.
+EMAIL_BLOCKED_DOMAINS = config('EMAIL_BLOCKED_DOMAINS', default='')
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "inquiries": "5/hour",
@@ -256,6 +301,10 @@ REST_FRAMEWORK = {
         "social": "30/hour",
         "login": "10/hour",
         "verify": "20/hour",
+        # Covers requesting a link, spending one, and changing a known
+        # password. Low: this is the endpoint somebody walks an address list
+        # through, and a legitimate person resets a password once.
+        "password_reset": "5/hour",
         # A dealership applies once. Anything beyond a handful an hour
         # from one address is not a dealership.
         "dealers": "5/hour",
@@ -269,6 +318,20 @@ REST_FRAMEWORK = {
         "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
+    ],
+    # Deny by default. DRF ships with AllowAny, which means a view that simply
+    # forgets to declare a permission is open to the internet rather than
+    # broken - the failure is silent, and looks exactly like a working view.
+    # That already happened here once: see the docstring on InitiatePaymentView,
+    # which took a payment reference from anybody at all.
+    #
+    # Every genuinely public endpoint now says so out loud with AllowAny - the
+    # catalogue, the token-addressed tracking pages, the two provider webhooks
+    # and the auth entry points. The cost of this line is that a new public
+    # view needs one explicit declaration; the benefit is that forgetting one
+    # returns 401 instead of leaking.
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -430,6 +493,15 @@ LOGGING = {
 # outside `manage.py test`.
 if 'test' in sys.argv:
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+
+    # example.com is the address domain RFC 2606 reserves for exactly this,
+    # and ~155 fixtures across the suite use it. Blocking it in the test run
+    # would mean rewriting all of them to prove a rule that production applies
+    # anyway - so the reserved list is off here and the tests that cover it
+    # switch it back on with override_settings.
+    EMAIL_REJECT_RESERVED_DOMAINS = False
+    # No test may depend on a DNS server answering.
+    EMAIL_REQUIRE_DELIVERABLE_DOMAIN = False
     # Every send logs a line, and the suite sends dozens - it buries the
     # actual test output. Warnings and errors still surface.
     LOGGING['loggers']['goldride']['level'] = 'WARNING'
