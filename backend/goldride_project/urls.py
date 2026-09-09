@@ -18,7 +18,6 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from rest_framework.authtoken.views import obtain_auth_token
 
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -28,6 +27,7 @@ from drf_spectacular.views import (
 
 from goldride_app.views import (
     EmailLoginView,
+    LoginView,
     LogoutView,
     MeView,
     PasswordChangeView,
@@ -61,7 +61,7 @@ urlpatterns = [
         'api/imports/requests/<uuid:token>/units/<int:pk>/decide/',
         SourcedUnitDecisionView.as_view(),
     ),
-    path('api/auth/login/', obtain_auth_token),
+    path('api/auth/login/', LoginView.as_view()),
     path('api/auth/login/email/', EmailLoginView.as_view()),
     path('api/auth/logout/', LogoutView.as_view()),
     path('api/auth/register/', RegisterView.as_view()),

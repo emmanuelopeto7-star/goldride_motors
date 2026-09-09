@@ -3,6 +3,7 @@ from urllib.parse import quote
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, permissions, serializers
 from rest_framework.authtoken.models import Token
+from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -394,3 +395,24 @@ class PasswordChangeView(APIView):
         # while every other device is signed out - which is the point.
         token = Token.objects.create(user=user)
         return Response({"detail": "Your password has been changed.", "token": token.key})
+
+
+class LoginView(ObtainAuthToken):
+    """Username-and-password sign-in, rate limited.
+
+    DRF's own `obtain_auth_token` was wired straight into the URLconf, and
+    `ObtainAuthToken` sets `throttle_classes = ()` - an empty tuple, not an
+    omission, so it opts out of the project defaults rather than inheriting
+    them. The endpoint accepted unlimited password guesses.
+
+    That mattered more than it looks: the *other* sign-in door,
+    `/api/auth/login/email/`, was throttled, so anybody rate-limited there
+    could simply move one URL over and carry on. A limit on one of two doors
+    is not a limit.
+
+    Subclassed rather than fixed with `DEFAULT_THROTTLE_CLASSES`, because the
+    empty tuple on the parent would keep winning over any default.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"

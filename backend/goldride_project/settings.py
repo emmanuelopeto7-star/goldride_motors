@@ -299,7 +299,16 @@ REST_FRAMEWORK = {
         "purchases": "5/hour",
         "register": "10/hour",
         "social": "30/hour",
-        "login": "10/hour",
+        # Both sign-in doors share this scope - `/api/auth/login/` and
+        # `/api/auth/login/email/` - so it cannot be sidestepped by moving to
+        # the other one. Counted per IP address for anonymous callers.
+        #
+        # Five is deliberately tight for password guessing, and it is also
+        # five typos before a real customer is locked out for the hour. Raise
+        # it with LOGIN_THROTTLE_RATE if that turns out to bite; the shape is
+        # "<number>/hour". Watch it in particular for customers behind one
+        # office or mobile-carrier address, who share the count.
+        "login": config('LOGIN_THROTTLE_RATE', default='5/hour'),
         "verify": "20/hour",
         # Covers requesting a link, spending one, and changing a known
         # password. Low: this is the endpoint somebody walks an address list
