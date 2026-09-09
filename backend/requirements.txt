@@ -17,3 +17,6 @@ whitenoise==6.12.0
 resend==2.42.0
 cloudinary==1.46.2
 django-cloudinary-storage==0.3.0
+# MX lookup for signup email validation (goldride_app/validators.py).
+# Optional at runtime: without it the reserved/disposable rules still apply.
+dnspython==2.8.0

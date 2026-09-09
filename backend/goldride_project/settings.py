@@ -341,6 +341,16 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Car listings, customer enquiries, import tracking, and card / M-PESA payments.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # The schema names all 134 routes, every staff endpoint among them, with
+    # their parameters and response shapes. That is a free map of the estate
+    # for anybody deciding where to push, and drf-spectacular serves it to
+    # AllowAny unless told otherwise. Staff only in production; open in debug
+    # so local development keeps its Swagger page without a login.
+    "SERVE_PERMISSIONS": (
+        ["rest_framework.permissions.AllowAny"]
+        if DEBUG
+        else ["rest_framework.permissions.IsAdminUser"]
+    ),
     # Without these, several models share a field name and the generated
     # client ends up with types called Status5d2Enum.
     "ENUM_NAME_OVERRIDES": {
