@@ -128,9 +128,24 @@ Both cost money, which is why this is a decision rather than a task. Note that
 an ephemeral filesystem loses uploads on every deploy even when they are served,
 so "no disk" is not a middle option.
 
-**Currently deployed without either**, on Render's free plan: `render.yaml`
-mounts no disk, so `/media/` returns 404 in production and car photographs do
-not appear. That is a known, accepted state for now, not a bug to hunt.
+**Solved with Cloudinary**, which is why neither of the above is needed. Set:
+
+```
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+```
+
+`STORAGES["default"]` follows `CLOUDINARY_CLOUD_NAME`: set, and uploads go to
+Cloudinary and are served from their CDN, so the host's disk stops mattering;
+unset, and Django writes to `backend/media/` as it does in development. The
+fallback is deliberate — a deploy that forgets the credentials gets the old
+behaviour, not a site that will not boot. `goldride_app/test_storage.py` pins
+both directions.
+
+Nothing else changed: `ImageField` and `CarImage` are untouched, because the
+storage API swaps underneath them, and the frontend only ever reads whatever
+URL the serializer returns.
 
 Dealer paperwork is **not** affected and must never be moved into a public media
 path: those files are streamed by a staff-only view that checks the caller

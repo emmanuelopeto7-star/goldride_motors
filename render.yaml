@@ -59,6 +59,16 @@ services:
       - key: SITE_URL
         sync: false # this service's own https:// URL, for /pay/<reference>/ links
 
+      # Uploaded photographs. Without these the free plan has nowhere to put
+      # a file: Django will not serve /media/ with DEBUG off, WhiteNoise
+      # serves only collected static, and the disk is wiped every deploy.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
       - key: PAYSTACK_SECRET_KEY
         sync: false
       # Not a secret: the public API host, identical for test and live keys.

@@ -130,6 +130,10 @@ INSTALLED_APPS = [
     'chat',
     'corsheaders',
     'drf_spectacular',
+    # Only supplies the storage backend; harmless when no credentials are set,
+    # because STORAGES then points at the filesystem instead.
+    'cloudinary_storage',
+    'cloudinary',
 ]
 
 # Browsers block a React dev server from calling this API unless the origin
@@ -451,9 +455,37 @@ STATIC_URL = 'static/'
 # Where collectstatic gathers everything for WhiteNoise to serve.
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# --- uploaded files -------------------------------------------------------
+# Cloudinary when it is configured, the local filesystem when it is not.
+#
+# Not a preference: a managed host with no persistent disk has nowhere to put
+# an upload. Django refuses to serve /media/ once DEBUG is off, WhiteNoise
+# serves only what collectstatic gathered, and the filesystem is wiped on every
+# deploy - so a photograph uploaded through the admin returned 404 immediately
+# and was gone for good shortly after. Both the hero and a car's photographs
+# were lost that way before this existed.
+#
+# Reading the cloud name rather than a flag means development keeps writing to
+# backend/media/ with nothing to switch, and a deploy that forgets the
+# credentials falls back to the old broken behaviour rather than erroring at
+# import - visible, but not a site that will not boot.
+CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='')
+
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': CLOUDINARY_CLOUD_NAME,
+    'API_KEY': config('CLOUDINARY_API_KEY', default=''),
+    'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+}
+
+MEDIA_STORAGE_BACKEND = (
+    'cloudinary_storage.storage.MediaCloudinaryStorage'
+    if CLOUDINARY_CLOUD_NAME
+    else 'django.core.files.storage.FileSystemStorage'
+)
+
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "BACKEND": MEDIA_STORAGE_BACKEND,
     },
     "staticfiles": {
         # Hashed filenames plus a manifest, so a deploy cannot serve last
