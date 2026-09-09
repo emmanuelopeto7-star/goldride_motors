@@ -4,13 +4,12 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics,filters,permissions,status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Car, Favourite, HeroBanner
+from .models import Car, Favourite
 from .serializers import (
     CarMakeSerializer,
     CarModelSerializer,
     CarSerializer,
     FavouriteSerializer,
-    HeroBannerSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -102,17 +101,3 @@ class FavouriteDestroyView(APIView):
         favourite = get_object_or_404(Favourite, user=request.user, car_id=car_id)
         favourite.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class HeroBannerView(APIView):
-    """The active hero, or null. Read-only and public, like the car list."""
-
-    @extend_schema(
-        responses={200: HeroBannerSerializer},
-        description="The active hero banner, or null when none is set.",
-    )
-    def get(self, request):
-        banner = HeroBanner.objects.filter(is_active=True).first()
-        if banner is None:
-            return Response(None)
-        return Response(HeroBannerSerializer(banner, context={"request": request}).data)

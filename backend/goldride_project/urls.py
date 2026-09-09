@@ -35,7 +35,7 @@ from goldride_app.views import (
     SocialLoginView,
     VerifyEmailView,
 )
-from cars.views import FavouriteDestroyView, FavouriteView, HeroBannerView
+from cars.views import FavouriteDestroyView, FavouriteView
 from payments.views import PayNowView
 from imports.views import (
     CancelOrderView,
@@ -48,7 +48,6 @@ from imports.views import (
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/cars/', include('cars.urls')),
-    path('api/hero/', HeroBannerView.as_view()),
     path('api/favourites/', FavouriteView.as_view()),
     path('api/favourites/<int:car_id>/', FavouriteDestroyView.as_view()),
     path('api/inquiries/', include('inquiries.urls')),

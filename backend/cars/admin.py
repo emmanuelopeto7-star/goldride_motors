@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Car, CarImage, HeroBanner
+from .models import Car, CarImage
 
 class CarImageInline(admin.TabularInline):
     model = CarImage
@@ -42,15 +42,3 @@ class CarAdmin(admin.ModelAdmin):
         }),
     ]
 admin.site.register(Car, CarAdmin)
-
-
-class HeroBannerAdmin(admin.ModelAdmin):
-    list_display = ["headline", "is_active", "has_video", "updated_at"]
-    list_filter = ["is_active"]
-
-    @admin.display(boolean=True, description="Video")
-    def has_video(self, obj):
-        return bool(obj.video)
-
-
-admin.site.register(HeroBanner, HeroBannerAdmin)

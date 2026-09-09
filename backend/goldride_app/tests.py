@@ -5,7 +5,6 @@ from io import BytesIO
 from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
-from cars.models import HeroBanner
 from imports.models import ImportRates
 from decimal import Decimal
 from unittest.mock import patch
@@ -846,92 +845,6 @@ class SocialAccountModelTests(APITestCase):
         SocialAccount.objects.create(provider="linkedin", uid="same", user=user)
 
         self.assertEqual(user.social_accounts.count(), 2)
-
-
-@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
-class HeroBannerFromTheDashboardTests(APITestCase):
-    """Swapping the home page hero used to mean opening the Django admin."""
-
-    url = "/api/staff/hero-banners/"
-
-    def sign_in(self, group):
-        User = get_user_model()
-        user = User.objects.create_user(f"hero{group}", f"hero{group}@x.com", "pw")
-        Group.objects.get_or_create(name=group)[0].user_set.add(user)
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=user).key}"
-        )
-        return user
-
-    def an_image(self, name="hero.png"):
-        buffer = BytesIO()
-        Image.new("RGB", (8, 4), "white").save(buffer, format="PNG")
-        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
-
-    def test_sales_can_put_up_a_new_hero(self):
-        self.sign_in("Sales")
-
-        response = self.client.post(self.url, {
-            "image": self.an_image(),
-            "headline": "Imported, cleared, delivered.",
-            "subline": "Sourcing to your door.",
-            "is_active": True,
-        }, format="multipart")
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(HeroBanner.objects.count(), 1)
-
-    def test_the_public_page_serves_it(self):
-        self.sign_in("Sales")
-        self.client.post(self.url, {
-            "image": self.an_image(),
-            "headline": "Imported, cleared, delivered.",
-            "is_active": True,
-        }, format="multipart")
-        self.client.credentials()
-
-        response = self.client.get("/api/hero/")
-
-        self.assertEqual(response.data["headline"], "Imported, cleared, delivered.")
-
-    def test_only_one_banner_is_reported_live(self):
-        """Several may be active; the most recently updated one wins, and the
-        screen has to say which rather than leave staff to work it out."""
-        self.sign_in("Sales")
-        older = HeroBanner.objects.create(
-            image=self.an_image("a.png"), headline="Older", is_active=True
-        )
-        newer = HeroBanner.objects.create(
-            image=self.an_image("b.png"), headline="Newer", is_active=True
-        )
-
-        rows = self.client.get(self.url).data
-
-        live = {row["id"]: row["is_live"] for row in rows}
-        self.assertTrue(live[newer.pk])
-        self.assertFalse(live[older.pk])
-
-    def test_a_customer_cannot_touch_the_hero(self):
-        User = get_user_model()
-        user = User.objects.create_user("shopper", "shopper@x.com", "pw")
-        Group.objects.get_or_create(name="Customer")[0].user_set.add(user)
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=user).key}"
-        )
-
-        response = self.client.post(self.url, {"headline": "Mine now"})
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_only_a_manager_may_delete_one(self):
-        self.sign_in("Sales")
-        banner = HeroBanner.objects.create(
-            image=self.an_image(), headline="Retire me", is_active=False
-        )
-
-        response = self.client.delete(f"{self.url}{banner.pk}/")
-
-        self.assertEqual(response.status_code, 403)
 
 
 class ImportRatesFromTheDashboardTests(APITestCase):

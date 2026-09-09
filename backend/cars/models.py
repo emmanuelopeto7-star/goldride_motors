@@ -10,7 +10,13 @@ from .video import embed_url, validate_video_url
 
 
 def validate_hero_video_size(value):
-    """A hero that takes ten seconds to arrive is worse than a still one."""
+    """Kept only because migration 0006 imports it by path.
+
+    The HeroBanner model it belonged to is gone - the home page image and
+    its words are part of the frontend build now. Removing this function
+    would make every historical migration fail to import, which is a worse
+    problem than an unused six-line validator.
+    """
     limit = 5 * 1024 * 1024
     if value.size > limit:
         raise ValidationError("Keep the hero video under 5MB.")
@@ -221,42 +227,3 @@ class CarImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.car}"
-
-
-class HeroBanner(models.Model):
-    """The full-bleed image on the home page.
-
-    Marketing swaps this from the admin instead of asking for a deploy, which
-    is the whole reason it is a row and not a file in the React bundle.
-    """
-
-    image = models.ImageField(
-        upload_to='hero/',
-        help_text="Poster frame, always required - it is what renders on the first "
-                  "paint, on mobile, and whenever the video cannot play.",
-    )
-    video = models.FileField(
-        upload_to='hero/',
-        blank=True,
-        validators=[
-            FileExtensionValidator(["mp4", "webm"]),
-            validate_hero_video_size,
-        ],
-        help_text="Optional. Muted and looping, desktop only. Strip the audio "
-                  "track before uploading.",
-    )
-    headline = models.CharField(max_length=120)
-    subline = models.CharField(max_length=200, blank=True)
-    cta_label = models.CharField(max_length=40, blank=True)
-    cta_url = models.CharField(max_length=200, blank=True)
-    is_active = models.BooleanField(
-        default=False,
-        help_text="Only the most recently updated active banner is served.",
-    )
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-updated_at']
-
-    def __str__(self):
-        return f"{self.headline} ({'active' if self.is_active else 'draft'})"

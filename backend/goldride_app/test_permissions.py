@@ -32,8 +32,6 @@ SALES_MAY = [
     ("staff/cars/1/", "get"), ("staff/cars/1/", "patch"),
     ("staff/cars/1/extend/", "post"),
     ("staff/car-images/", "get"), ("staff/car-images/", "post"),
-    ("staff/hero-banners/", "get"), ("staff/hero-banners/", "post"),
-    ("staff/hero-banners/1/", "patch"),
     ("staff/orders/", "get"), ("staff/orders/1/", "get"),
     ("staff/orders/1/", "patch"), ("staff/orders/1/reactivate/", "post"),
     ("staff/milestones/", "post"),
@@ -62,7 +60,6 @@ SALES_MAY = [
 MANAGER_ONLY = [
     ("staff/cars/1/", "delete"),
     ("staff/car-images/1/", "delete"),
-    ("staff/hero-banners/1/", "delete"),
     ("staff/orders/1/", "delete"),
     ("staff/sourced-units/1/", "delete"),
     ("staff/import-rates/", "post"),

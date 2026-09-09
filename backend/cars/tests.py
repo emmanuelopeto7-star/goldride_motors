@@ -16,7 +16,7 @@ from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from .models import Car, CarImage, Favourite, HeroBanner
+from .models import Car, CarImage, Favourite
 
 # Uploads in tests must not land in the real media folder - without this every
 # run leaves another hero_XXXX.jpg behind next to genuine content.
@@ -198,91 +198,6 @@ class FavouriteTests(APITestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertTrue(Favourite.objects.filter(user=self.other).exists())
-
-
-@MEDIA_OVERRIDE
-class HeroBannerTests(APITestCase):
-    url = "/api/hero/"
-
-    def banner(self, headline="Arrivals", is_active=True):
-        return HeroBanner.objects.create(
-            image=SimpleUploadedFile("hero.jpg", b"not-a-real-jpeg"),
-            headline=headline,
-            subline="Hand picked",
-            is_active=is_active,
-        )
-
-    def test_returns_null_when_nothing_is_active(self):
-        """The home page must render without a banner, not error."""
-        response = self.client.get(self.url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.data)
-
-    def test_returns_the_active_banner(self):
-        self.banner(headline="Latest arrivals")
-
-        response = self.client.get(self.url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["headline"], "Latest arrivals")
-        self.assertEqual(response.data["subline"], "Hand picked")
-
-    def test_ignores_drafts(self):
-        self.banner(headline="Draft", is_active=False)
-
-        self.assertIsNone(self.client.get(self.url).data)
-
-    def test_serves_the_most_recent_of_several_active_banners(self):
-        self.banner(headline="Older")
-        newer = self.banner(headline="Newer")
-
-        response = self.client.get(self.url)
-
-        self.assertEqual(response.data["headline"], newer.headline)
-
-    def test_image_is_an_absolute_url(self):
-        """The React app is on another origin, so a relative path is useless."""
-        self.banner()
-
-        response = self.client.get(self.url)
-
-        self.assertTrue(response.data["image"].startswith("http"))
-
-    def test_is_read_only(self):
-        response = self.client.post(self.url, {"headline": "Nope"})
-
-        self.assertEqual(response.status_code, 405)
-
-    def test_video_is_optional_and_empty_when_absent(self):
-        """A still-only banner is the normal case, not a degraded one."""
-        self.banner()
-
-        response = self.client.get(self.url)
-
-        self.assertIn("video", response.data)
-        self.assertFalse(response.data["video"])
-
-    def test_video_is_served_when_present(self):
-        banner = self.banner()
-        banner.video = SimpleUploadedFile("hero.mp4", b"not-a-real-mp4")
-        banner.save(update_fields=["video"])
-
-        response = self.client.get(self.url)
-
-        self.assertTrue(response.data["video"].endswith(".mp4"))
-        self.assertTrue(response.data["video"].startswith("http"))
-
-    def test_poster_is_still_served_alongside_a_video(self):
-        """The poster is the fallback, so it must never be replaced by the video."""
-        banner = self.banner()
-        banner.video = SimpleUploadedFile("hero.mp4", b"not-a-real-mp4")
-        banner.save(update_fields=["video"])
-
-        response = self.client.get(self.url)
-
-        self.assertTrue(response.data["image"])
-        self.assertNotEqual(response.data["image"], response.data["video"])
 
 
 class VinUniquenessTests(APITestCase):

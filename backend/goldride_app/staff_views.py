@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 
 from django_filters.rest_framework import DjangoFilterBackend
 
-from cars.models import Car, CarImage, HeroBanner
+from cars.models import Car, CarImage
 from imports.models import (
     ImportMilestone,
     ImportOrder,
@@ -40,7 +40,6 @@ from payments.reconciliation import reconcile_payment, reconcile_pending
 from .permissions import IsManager, IsSales
 from .staff_serializers import (
     StaffImportRatesWriteSerializer,
-    StaffHeroBannerSerializer,
     StaffCarImageSerializer,
     StaffCarSerializer,
     StaffImportRequestSerializer,
@@ -772,31 +771,3 @@ class StaffImportRatesView(APIView):
             "stock_markup": rates.stock_markup,
             "effective_from": rates.effective_from,
         }
-
-
-class HeroBannerMixin:
-    """Both hero views need the same answer to "which one is actually live?"."""
-
-    permission_classes = [IsSales]
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        live = HeroBanner.objects.filter(is_active=True).first()
-        context["live_pk"] = live.pk if live else None
-        return context
-
-
-class StaffHeroBannerListView(HeroBannerMixin, generics.ListCreateAPIView):
-    """Swapping the home page hero without a deploy - or, until now, without
-    the Django admin, which was the only place this could be done."""
-
-    queryset = HeroBanner.objects.all()
-    serializer_class = StaffHeroBannerSerializer
-    pagination_class = None
-
-
-class StaffHeroBannerDetailView(
-    HeroBannerMixin, ManagerToDelete, generics.RetrieveUpdateDestroyAPIView
-):
-    queryset = HeroBanner.objects.all()
-    serializer_class = StaffHeroBannerSerializer

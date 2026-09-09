@@ -25,6 +25,22 @@ User = get_user_model()
 URL = "/api/staff/overview/"
 
 
+def months_back(count):
+    """Midday on the 15th, `count` calendar months ago.
+
+    Not `timedelta(days=70)`, which was here before and meant "about two and a
+    bit months": it landed in the month the assertions expected only when the
+    current date was late enough in its own month, so the suite passed in
+    August and failed on 2 September. Calendar months are what the endpoint
+    groups by, so the fixture has to speak the same units. The 15th keeps a
+    timezone offset from tipping the date into a neighbouring month.
+    """
+    now = timezone.now()
+    total = now.year * 12 + (now.month - 1) - count
+    return now.replace(year=total // 12, month=total % 12 + 1, day=15, hour=12)
+
+
+
 def staff(username, role):
     user = User.objects.create_user(username, f"{username}@goldride.co.ke", "pw")
     Group.objects.get_or_create(name=role)[0].user_set.add(user)
@@ -146,9 +162,7 @@ class OverviewFiguresTests(APITestCase):
     def test_collections_are_grouped_by_when_the_money_arrived(self):
         order = an_order()
         old = a_payment(order, "300000.00", status="paid")
-        Payment.objects.filter(pk=old.pk).update(
-            paid_at=timezone.now() - timedelta(days=70)
-        )
+        Payment.objects.filter(pk=old.pk).update(paid_at=months_back(2))
         a_payment(order, "200000.00", status="paid")
 
         months = self.get()["collections"]["months"]
@@ -164,7 +178,7 @@ class OverviewFiguresTests(APITestCase):
         """
         order = an_order()
         payment = a_payment(order, "300000.00", status="paid")
-        two_months_ago = timezone.now() - timedelta(days=70)
+        two_months_ago = months_back(2)
         Payment.objects.filter(pk=payment.pk).update(paid_at=two_months_ago)
 
         payment.refresh_from_db()

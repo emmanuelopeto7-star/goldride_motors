@@ -2,7 +2,7 @@ from django.conf import settings
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from .models import Car, CarImage, Favourite, HeroBanner
+from .models import Car, CarImage, Favourite
 
 
 class CarMakeSerializer(serializers.Serializer):
@@ -87,11 +87,3 @@ class FavouriteSerializer(serializers.ModelSerializer):
     @extend_schema_field(CarSerializer)
     def get_car_detail(self, favourite):
         return CarSerializer(favourite.car, context=self.context).data
-
-
-class HeroBannerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = HeroBanner
-        fields = [
-            'id', 'image', 'video', 'headline', 'subline', 'cta_label', 'cta_url',
-        ]

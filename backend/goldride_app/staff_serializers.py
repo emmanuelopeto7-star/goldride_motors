@@ -1,7 +1,7 @@
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from cars.models import Car, CarImage, HeroBanner
+from cars.models import Car, CarImage
 from imports.models import (
     ImportRates,
     ImportMilestone,
@@ -300,31 +300,6 @@ class StaffImportRequestSerializer(serializers.ModelSerializer):
             "status", "token", "created_at", "units",
         ]
         read_only_fields = ["token", "created_at"]
-
-
-class StaffHeroBannerSerializer(serializers.ModelSerializer):
-    """The full-bleed image on the home page.
-
-    `is_live` rather than leaving the frontend to work it out: the rule is
-    that the most recently updated *active* banner wins, so several can be
-    active at once and only one of them is on the site. Saying which is the
-    difference between a screen you can trust and one you have to reason
-    about.
-    """
-
-    is_live = serializers.SerializerMethodField()
-
-    class Meta:
-        model = HeroBanner
-        fields = [
-            "id", "image", "video", "headline", "subline",
-            "cta_label", "cta_url", "is_active", "is_live", "updated_at",
-        ]
-        read_only_fields = ["updated_at"]
-
-    @extend_schema_field(serializers.BooleanField())
-    def get_is_live(self, banner):
-        return banner.pk == self.context.get("live_pk")
 
 
 class StaffImportRatesWriteSerializer(serializers.ModelSerializer):
