@@ -92,3 +92,49 @@ class PaperworkStaysPrivateTests(SimpleTestCase):
             with self.subTest(model=model.__name__):
                 storage = model._meta.get_field(field).storage
                 self.assertEqual(type(storage).__name__, "DefaultStorage")
+
+
+class CarouselThumbnailUrlTests(SimpleTestCase):
+    """The model carousel builds its own image URLs, and got them wrong.
+
+    Rows come from values()/annotate(), so `image` is a raw stored name rather
+    than a FileField - there is no `.url` to call, and the serializer used to
+    glue MEDIA_URL onto the front. That assumed uploads live under /media/ on
+    this host. Cloudinary stores the name as "media/cars/x", so the carousel
+    asked our own domain for /media/media/cars/x and every thumbnail 404'd,
+    while the car list - which does go through a FileField - was fine.
+    """
+
+    def url_for(self, stored_name, storage):
+        from unittest.mock import patch
+
+        from cars.serializers import CarModelSerializer
+
+        with patch("cars.serializers.default_storage", storage):
+            return CarModelSerializer().get_image({"image": stored_name})
+
+    def test_uses_whatever_url_the_backend_reports(self):
+        class CloudStorage:
+            def url(self, name):
+                return f"https://res.cloudinary.com/goldride/image/upload/v1/{name}"
+
+        url = self.url_for("media/cars/prado", CloudStorage())
+
+        self.assertEqual(
+            url, "https://res.cloudinary.com/goldride/image/upload/v1/media/cars/prado"
+        )
+        self.assertNotIn("/media/media/", url)
+
+    def test_still_works_on_the_local_filesystem(self):
+        class LocalStorage:
+            def url(self, name):
+                return f"/media/{name}"
+
+        self.assertEqual(self.url_for("cars/prado.jpg", LocalStorage()), "/media/cars/prado.jpg")
+
+    def test_a_model_with_no_photograph_gets_no_url(self):
+        # Max("image") returns "" when no car of that model has one, and an
+        # empty string must not become a URL to the storage root.
+        from cars.serializers import CarModelSerializer
+
+        self.assertIsNone(CarModelSerializer().get_image({"image": ""}))

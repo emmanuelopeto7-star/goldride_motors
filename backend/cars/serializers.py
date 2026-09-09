@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.files.storage import default_storage
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -26,8 +27,16 @@ class CarModelSerializer(serializers.Serializer):
         path = row.get("image")
         if not path:
             return None
+        # Ask the storage rather than gluing MEDIA_URL onto the path. That glue
+        # assumed uploads live under /media/ on this host, which stopped being
+        # true the moment they moved to Cloudinary: the stored name is already
+        # "media/cars/x", so the carousel asked this domain for
+        # /media/media/cars/x and every thumbnail 404'd while the car list -
+        # which goes through the FileField - was perfectly fine.
+        url = default_storage.url(path)
         request = self.context.get("request")
-        url = f"{settings.MEDIA_URL}{path}"
+        # A no-op on the absolute URL a cloud backend returns, and what turns
+        # the filesystem's relative one into something a browser can fetch.
         return request.build_absolute_uri(url) if request else url
 
 
