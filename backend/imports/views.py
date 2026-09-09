@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from rest_framework.permissions import AllowAny
+
 from goldride_app.permissions import IsCustomer
 
 from .models import ImportOrder, ImportRequest, SourcedUnit
@@ -16,6 +18,8 @@ from .services import notify_cancelled, notify_new_request
 
 
 class TrackingView(generics.RetrieveAPIView):
+    # The UUID token is the credential - see the note on ImportRequestTrackingView.
+    permission_classes = [AllowAny]
     queryset = ImportOrder.objects.all()
     serializer_class = TrackingSerializer
     lookup_field = "token"
@@ -69,9 +73,11 @@ class ImportRequestCreateView(generics.CreateAPIView):
 
     Someone who wants a car found is a lead, and putting a registration wall
     in front of a lead loses it. The token in the response is how an
-    unregistered customer gets back to the request afterwards.
+    unregistered customer gets back to the request afterwards. The throttle,
+    not a login, is what keeps this from being a firehose.
     """
 
+    permission_classes = [AllowAny]
     serializer_class = ImportRequestSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "imports"
@@ -93,6 +99,7 @@ class ImportRequestTrackingView(generics.RetrieveAPIView):
     serializer withholds the purchase price and shows only the quote.
     """
 
+    permission_classes = [AllowAny]
     queryset = ImportRequest.objects.prefetch_related("units")
     serializer_class = ImportRequestSerializer
     lookup_field = "token"
@@ -107,6 +114,7 @@ class SourcedUnitDecisionView(APIView):
     the request could be raised without one.
     """
 
+    permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "tracking"
 

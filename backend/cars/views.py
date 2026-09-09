@@ -14,6 +14,8 @@ from .serializers import (
 from django_filters.rest_framework import DjangoFilterBackend
 
 class carListVeiw(generics.ListAPIView):
+    # Public on purpose: this is the shop window.
+    permission_classes = [permissions.AllowAny]
     queryset = Car.objects.live().order_by("-id")
     serializer_class = CarSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -26,6 +28,7 @@ class carListVeiw(generics.ListAPIView):
 class carDetailView(generics.RetrieveAPIView):
     # A lapsed listing 404s rather than rendering, so a stale link from a search
     # engine does not turn into an enquiry about a car that is long gone.
+    permission_classes = [permissions.AllowAny]
     queryset = Car.objects.live()
     serializer_class = CarSerializer
 
@@ -39,6 +42,7 @@ class CarMakesView(generics.ListAPIView):
     a make offering "3 cars" that lists two would be worse than not showing it.
     """
 
+    permission_classes = [permissions.AllowAny]
     serializer_class = CarMakeSerializer
     pagination_class = None
 
@@ -54,6 +58,7 @@ class CarModelsView(generics.ListAPIView):
     """Every make/model pairing with a count and one photograph, for the
     model carousel. Unpaginated - it is a browse aid, not a listing."""
 
+    permission_classes = [permissions.AllowAny]
     serializer_class = CarModelSerializer
     pagination_class = None
 

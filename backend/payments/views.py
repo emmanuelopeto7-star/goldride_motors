@@ -1,3 +1,6 @@
+import re
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -132,6 +135,9 @@ class InitiatePaymentView(APIView):
 
 @extend_schema(exclude=True)
 class PaystackWebhookView(APIView):
+    # Paystack cannot authenticate; the HMAC signature below is the credential.
+    permission_classes = [AllowAny]
+
     def post(self, request):
         signature = request.headers.get("x-paystack-signature")
         if not verify_paystack_signature(request.body, signature):
@@ -180,6 +186,9 @@ class PaystackWebhookView(APIView):
 
 @extend_schema(exclude=True)
 class MpesaCallbackView(APIView):
+    # Safaricom cannot authenticate; the out-of-band STK query is the check.
+    permission_classes = [AllowAny]
+
     def post(self, request):
         stk = request.data.get("Body", {}).get("stkCallback", {})
         checkout_id = stk.get("CheckoutRequestID")
@@ -207,6 +216,36 @@ class MpesaCallbackView(APIView):
             )
         except Payment.DoesNotExist:
             return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+        # Everything below comes out of an unauthenticated request body. The
+        # STK query above proves Safaricom really settled this checkout, but it
+        # reports no amount and no receipt, so those two fields are still only
+        # a claim by whoever posted here. Treat them as such.
+        metadata = {}
+        for item in stk.get("CallbackMetadata", {}).get("Item", []):
+            if isinstance(item, dict) and item.get("Name"):
+                metadata[item["Name"]] = item.get("Value")
+
+        # The Paystack branch refuses a charge whose amount is not the one we
+        # invoiced; this had no equivalent, so an underpayment that Safaricom
+        # confirmed would have closed the invoice in full. Absent is tolerated
+        # - some sandbox callbacks omit it - but present and wrong is refused.
+        if metadata.get("Amount") is not None:
+            try:
+                paid = Decimal(str(metadata["Amount"]))
+            except (InvalidOperation, TypeError):
+                paid = None
+            if paid is None or paid != payment.amount:
+                payment.note = "amount mismatch"
+                payment.save(update_fields=["note", "updated_at"])
+                return Response({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+        # A receipt number is written into the payment's permanent audit trail.
+        # Safaricom's are short and alphanumeric; anything else is somebody
+        # else's text going into our financial record, so it is dropped rather
+        # than stored.
+        claimed = str(metadata.get("MpesaReceiptNumber") or "")
+        receipt = claimed if re.fullmatch(r"[A-Za-z0-9]{1,20}", claimed) else ""
 
         settle(
             payment,
