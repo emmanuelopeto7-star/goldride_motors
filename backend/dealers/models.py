@@ -49,6 +49,18 @@ def validate_document(value):
         raise ValidationError("Attach a PDF or an image.")
 
 
+def private_document_storage():
+    """Dealer paperwork stays on local disk, whatever the default storage is.
+
+    A callable rather than an instance: Django records the reference in the
+    migration, so MEDIA_ROOT is read when a file is saved rather than frozen
+    at the moment makemigrations ran.
+    """
+    from django.core.files.storage import FileSystemStorage
+
+    return FileSystemStorage()
+
+
 def document_path(instance, filename):
     """An unguessable directory per file.
 
@@ -486,7 +498,19 @@ class DealerDocument(models.Model):
         DealerApplication, on_delete=models.CASCADE, related_name="documents"
     )
     kind = models.CharField(max_length=20, choices=KIND_CHOICES, default=OTHER)
-    file = models.FileField(upload_to=document_path, validators=[validate_document])
+    # Explicitly the local filesystem, never the default storage.
+    #
+    # Car photographs moved to Cloudinary so they survive a host with no disk.
+    # These must not follow them: a logbook, a national ID and a KRA PIN
+    # certificate are personal documents, and Cloudinary delivers by public
+    # URL - unlisted, but readable by anyone who has it. Nothing in the app
+    # ever emits that URL, which is exactly what would make the leak quiet.
+    # They are streamed instead by a staff-only view that checks the caller.
+    file = models.FileField(
+        upload_to=document_path,
+        storage=private_document_storage,
+        validators=[validate_document],
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
